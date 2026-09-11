@@ -23,13 +23,13 @@ object GeminiConstants {
     )
 
     const val PERSONALITY_GIRLFRIEND = "Girlfriend Mode"
-    const val PERSONALITY_PROFESSIONAL = "Professional Mode"
     const val PERSONALITY_ASSISTANT = "Assistant Mode"
+    const val PERSONALITY_PERSONAL_AI = "Personal AI Mode"
 
     val SUPPORTED_PERSONALITIES = listOf(
         PERSONALITY_ASSISTANT,
         PERSONALITY_GIRLFRIEND,
-        PERSONALITY_PROFESSIONAL
+        PERSONALITY_PERSONAL_AI
     )
 
     const val WS_BASE_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"

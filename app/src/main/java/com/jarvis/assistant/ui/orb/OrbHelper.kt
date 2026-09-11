@@ -36,7 +36,7 @@ class OrbHelper(private val webView: WebView) {
                 super.onPageFinished(view, url)
                 isLoaded = true
                 pendingState?.let {
-                    updateState(it, 0.2f)
+                    updateState(it)
                     pendingState = null
                 }
             }
@@ -48,7 +48,7 @@ class OrbHelper(private val webView: WebView) {
             }
         }
 
-        webView.loadUrl("file:///android_asset/orb/index.html")
+        webView.loadUrl("file:///android_asset/avatar/index.html")
     }
 
     fun updateState(state: ConversationState, audioLevel: Float = 0f) {
@@ -57,19 +57,21 @@ class OrbHelper(private val webView: WebView) {
             return
         }
         val orbKey = state.orbKey
-        val level = audioLevel.coerceIn(0f, 1f)
-        val js = "javascript:if(window.setOrbState){window.setOrbState('$orbKey', $level);}"
+        val js = "javascript:if(window.setOrbState){window.setOrbState('$orbKey');}"
         webView.post {
             webView.evaluateJavascript(js, null)
         }
     }
 
+    fun updateEmotion(emotion: String) {
+        // Not used for video avatar
+    }
+
     fun updateAudioLevel(level: Float) {
-        if (!isLoaded) return
-        val clamped = level.coerceIn(0f, 1f)
-        val js = "javascript:if(window.setAudioLevel){window.setAudioLevel($clamped);}"
-        webView.post {
-            webView.evaluateJavascript(js, null)
-        }
+        // Not used for video avatar
+    }
+
+    fun updateMode(mode: String) {
+        // Not used for video avatar
     }
 }

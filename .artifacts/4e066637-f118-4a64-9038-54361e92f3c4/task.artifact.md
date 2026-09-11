@@ -1,14 +1,14 @@
-# JARVIS Singing Duration Fix Task List
+# Reconnection Loop Fix Tasks
 
-- [x] **State Management Fixes (MainViewModel.kt)**
-    - [x] Ensure `SINGING` state is preserved when new audio chunks arrive during a session.
-    - [x] Prevent early `IDLE` transition during minor gaps in singing audio.
-- [x] **Duration Parser Improvements**
-    - [x] Update `DurationParser.kt` regex to better capture Bengali numbers and units.
-- [x] **Continuation Logic Refinement**
-    - [x] Update `MainViewModel.kt` to trigger continuation more reliably with a buffer.
-    - [x] Improve continuation prompt in `PromptGenerator.kt` for stronger emphasis.
-- [ ] **Verification**
-    - [ ] Build and Deploy.
-    - [ ] Test 2-minute and 5-minute singing sessions.
-    - [ ] Verify Orb color persistence during singing.
+- [ ] **Stabilize Reconnection Logic (GeminiLiveWebSocket.kt)**
+    - [x] Add `MAX_RECONNECT_ATTEMPTS = 5`.
+    - [x] Implement logic to stop retrying after max attempts.
+    - [x] Fix `startSessionRenewal` to disconnect properly before reconnecting.
+    - [x] Handle server-side JSON errors by closing the connection.
+    - [x] Add detailed logs for each state transition.
+- [ ] **ViewModel Enhancements (MainViewModel.kt)**
+    - [x] Improve error event handling for user-facing messages.
+    - [x] Ensure orb state is reset on critical failures.
+- [ ] **Final Verification**
+    - [ ] Deploy and test with simulated failures.
+    - [ ] Verify no infinite loop on persistent failures.

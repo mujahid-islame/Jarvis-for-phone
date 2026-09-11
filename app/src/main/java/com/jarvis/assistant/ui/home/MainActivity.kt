@@ -160,6 +160,7 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.personalityName.collect { personality ->
                         binding.tvPersonalityMode.text = personality
+                        orbHelper.updateMode(personality)
                     }
                 }
 
@@ -189,6 +190,12 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.conversationState.collect { state ->
                         updateConversationStateUi(state)
+                    }
+                }
+
+                launch {
+                    viewModel.currentEmotion.collect { emotion ->
+                        orbHelper.updateEmotion(emotion)
                     }
                 }
 

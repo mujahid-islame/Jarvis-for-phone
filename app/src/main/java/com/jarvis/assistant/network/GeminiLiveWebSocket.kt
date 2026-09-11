@@ -160,7 +160,7 @@ class GeminiLiveWebSocket(
     private fun handleIncomingMessage(jsonText: String) {
         try {
             val root = JsonParser.parseString(jsonText).asJsonObject
-            
+
             val serverContent = when {
                 root.has("serverContent") -> root.getAsJsonObject("serverContent")
                 root.has("server_content") -> root.getAsJsonObject("server_content")
@@ -244,11 +244,11 @@ class GeminiLiveWebSocket(
      */
     private fun handleAssistantText(rawText: String) {
         if (rawText.isBlank()) return
-        
+
         // Robust Emotion Parser (Case-insensitive [EMOTION:CATEGORY])
         val emotionRegex = Regex("\\[EMOTION:(\\w+)\\]", RegexOption.IGNORE_CASE)
         val match = emotionRegex.find(rawText)
-        
+
         if (match != null) {
             val emotionCategory = match.groupValues[1].uppercase()
             Log.d(TAG, "[EMOTION] Detected: $emotionCategory")

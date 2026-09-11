@@ -1,6 +1,7 @@
 package com.jarvis.assistant.data.repository
 
 import com.jarvis.assistant.data.model.ChatTurn
+import com.jarvis.assistant.data.model.GeminiConstants
 import com.jarvis.assistant.data.preferences.AppPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,17 @@ class ChatRepository(private val preferences: AppPreferences) {
 
         _turns.value = currentList
         preferences.saveChatHistory(currentList)
+    }
+
+    @Synchronized
+    fun getModeSpecificHistory(mode: String): List<ChatTurn> {
+        val all = _turns.value
+        return when (mode) {
+            GeminiConstants.PERSONALITY_ASSISTANT -> all.filter { it.mode == "NORMAL" || it.mode == "ASSISTANT" }
+            GeminiConstants.PERSONALITY_GIRLFRIEND -> all.filter { it.mode == "SINGING" || it.mode == "GIRLFRIEND" }
+            GeminiConstants.PERSONALITY_PERSONAL_AI -> all
+            else -> all
+        }
     }
 
     @Synchronized

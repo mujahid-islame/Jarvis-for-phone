@@ -3,8 +3,8 @@ package com.jarvis.assistant.util
 import java.util.regex.Pattern
 
 object DurationParser {
-    private const val DEFAULT_DURATION_MS = 120000L // 2 minutes
-    private const val MAX_DURATION_MS = 300000L     // 5 minutes
+    private const val DEFAULT_DURATION_MS = 180000L // 3 minutes
+    private const val MAX_DURATION_MS = 600000L     // 10 minutes
 
     /**
      * Parses duration from user transcript.

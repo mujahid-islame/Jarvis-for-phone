@@ -10,6 +10,7 @@ import com.jarvis.assistant.audio.SingingSessionManager
 import com.jarvis.assistant.audio.VoiceActivityDetector
 import com.jarvis.assistant.data.model.ChatTurn
 import com.jarvis.assistant.data.model.ConversationState
+import com.jarvis.assistant.data.model.GeminiConstants
 import com.jarvis.assistant.data.preferences.AppPreferences
 import com.jarvis.assistant.data.repository.ChatRepository
 import com.jarvis.assistant.network.GeminiLiveWebSocket
@@ -58,6 +59,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _liveTime = MutableStateFlow("")
     val liveTime: StateFlow<String> = _liveTime.asStateFlow()
+
+    private val _currentEmotion = MutableStateFlow("NEUTRAL")
+    val currentEmotion: StateFlow<String> = _currentEmotion.asStateFlow()
 
     private val _singingProgress = MutableStateFlow<String?>(null)
     val singingProgress: StateFlow<String?> = _singingProgress.asStateFlow()
@@ -223,7 +227,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 override fun onUserTextReceived(text: String) {
                     currentTurnUserText.append(text)
-                    checkSingingIntent(text)
+                    if (!handleModeSwitchCommand(text)) {
+                        checkSingingIntent(text)
+                    }
                 }
 
                 override fun onFirstAudioByteReceived() {
@@ -247,6 +253,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 override fun onEmotionDetected(emotion: String, confidence: Double?) {
                     currentTurnEmotion = emotion
                     currentTurnEmotionConfidence = confidence
+                    _currentEmotion.value = emotion
                     android.util.Log.d(TAG, "[EMOTION] emotion=$emotion confidence=$confidence")
                 }
 
@@ -294,7 +301,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 liveWebSocket?.sendAudioChunk(chunk)
 
                 val vadResult = vad.processChunk(amplitude)
-                
+
                 when (vadResult) {
                     VoiceActivityDetector.VadResult.SPEECH_CONTINUING -> {
                         if (_conversationState.value == ConversationState.SPEAKING || _conversationState.value == ConversationState.SINGING) {
@@ -364,6 +371,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val sessionId = singingManager.start(durationMs)
         _conversationState.value = ConversationState.SINGING
         android.util.Log.i(TAG, "[SINGING] Started session $sessionId for ${durationMs / 1000}s")
+        
+        // Dynamic Steering: Inject the full Singing Engine instructions mid-session
+        val steeringPrompt = PromptGenerator.generateSystemPrompt(
+            personality = preferences.personality,
+            userName = preferences.userName,
+            isSingingSession = true,
+            requestedDurationMs = durationMs
+        )
+        liveWebSocket?.sendText("INSTRUCTION: Activate the [SINGING ENGINE] defined in my system prompt now. Use the provided lyrics and structure. Begin the performance immediately.\n\n$steeringPrompt")
     }
 
     private fun requestSingingContinuation() {
@@ -384,6 +400,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             liveWebSocket?.sendText(prompt)
+        }
+    }
+
+    private fun handleModeSwitchCommand(text: String): Boolean {
+        val lower = text.lowercase()
+        val newMode = when {
+            lower.contains("switch to assistant") || lower.contains("assistant mode") -> GeminiConstants.PERSONALITY_ASSISTANT
+            lower.contains("switch to girlfriend") || lower.contains("girlfriend mode") -> GeminiConstants.PERSONALITY_GIRLFRIEND
+            lower.contains("switch to personal ai") || lower.contains("personal ai mode") -> GeminiConstants.PERSONALITY_PERSONAL_AI
+            else -> null
+        }
+
+        if (newMode != null && newMode != preferences.personality) {
+            preferences.personality = newMode
+            _personalityName.value = newMode
+            refreshSession()
+            return true
+        }
+        return false
+    }
+
+    private fun refreshSession() {
+        if (_isSessionOn.value) {
+            viewModelScope.launch {
+                _eventFlow.emit("Switching to ${preferences.personality}...")
+                _connectionStatus.value = "CONNECTING..."
+                
+                // Stop existing session gracefully but firmly
+                stopSession()
+                
+                // Allow a small gap for resources to free up
+                delay(300)
+                
+                if (isActive) {
+                    startSession()
+                }
+            }
         }
     }
 
@@ -409,6 +462,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         currentTurnAssistantText.clear()
         currentTurnUserText.clear()
         currentTurnEmotion = "NEUTRAL"
+        _currentEmotion.value = "NEUTRAL"
         currentTurnEmotionConfidence = null
         isCurrentTurnInterrupted = false
         vad.reset()

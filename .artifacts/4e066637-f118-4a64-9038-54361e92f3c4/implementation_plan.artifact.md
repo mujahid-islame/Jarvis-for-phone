@@ -1,27 +1,35 @@
-# JARVIS Continuous Singing Duration Fix Plan
+# Bulletproof WebSocket Reconnection & Stability Plan
 
-এই পরিকল্পনার লক্ষ্য হলো জারভিসের গান গাওয়ার সময়কে (Duration) আপনার অনুরোধ অনুযায়ী নিখুঁত করা। আগের ইমপ্লিমেন্টেশনে কিছু লজিক্যাল ভুলের কারণে গান নির্ধারিত সময়ের আগেই থেমে যাচ্ছিল বা মোড পরিবর্তন হয়ে যাচ্ছিল।
+এই পরিকল্পনার লক্ষ্য হলো "Reconnecting Loop" সমস্যাটি স্থায়ীভাবে সমাধান করা এবং জারভিসের কানেকশনকে আরও শক্তিশালী ও নির্ভরযোগ্য করে তোলা।
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Max Attempts**: আমরা ৫টি ব্যর্থ চেষ্টার পর অটো-রিকানেক্ট বন্ধ করে দেব এবং ইউজারকে সেটিংস চেক করতে বলব। এটি অ্যাপকে "Infinite Loop" থেকে বাঁচাবে।
+> **Server Error Handling**: যদি Gemini থেকে কোনো এরর আসে (যেমন: API Key ইনভ্যালিড), অ্যাপটি সাথে সাথে কানেকশন বন্ধ করে দিবে এবং সঠিক কারণ জানাবে।
+> **Session Refresh Fix**: ৯-মিনিট পর পর সেশন রিনিউ করার লজিকটি ফিক্স করা হবে যাতে পুরনো সেশনটি পুরোপুরি বন্ধ হওয়ার পর নতুনটি শুরু হয়।
 
 ## Proposed Changes
 
-### ১. স্টেট ম্যানেজমেন্ট ফিক্স (State Persistence)
-- **MainViewModel.kt**: `onAudioDataReceived` ফাংশনটি আপডেট করা হবে যাতে গান চলাকালীন নতুন অডিও চাঙ্ক আসলে সেটি স্টেটকে `SPEAKING`-এ রিসেট না করে `SINGING`-এই রাখে।
-- **Playback Listener**: গান চলাকালীন বিরতি (Gap) থাকলে যাতে ঝটপট `IDLE` মোডে চলে না যায়, সেই লজিক উন্নত করা হবে।
+### [Component: Network]
 
-### ২. কন্টিনিউয়েশন লজিক ইমপ্রুভমেন্ট (Seamless Continuation)
-- **SingingSessionManager**: সেশন কি এখনো অ্যাক্টিভ আছে কিনা তা আরও কঠোরভাবে যাচাই করা হবে।
-- **Continuation Trigger**: সার্ভার থেকে একটি অংশ শেষ হওয়ার সাথে সাথে পরবর্তী অংশের জন্য প্রম্পট পাঠানোর সময় নিশ্চিত করা হবে যে জারভিস তার আগের সুরটি মনে রাখছে।
+#### [MODIFY] [GeminiLiveWebSocket.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/assistant/network/GeminiLiveWebSocket.kt)
+- **Attempt Limiting**: `MAX_RECONNECT_ATTEMPTS = 5` যোগ করা।
+- **Graceful Failure**: ৫ বার ব্যর্থ হলে "RECONNECTING" মোড থেকে বেরিয়ে এসে "FAILED" স্টেট সেট করা।
+- **Server-Side Error Close**: সার্ভার থেকে `error` অবজেক্ট পেলে সেশনটি `cancel()` করা এবং রিকানেক্ট না করা (যদি কারণটি ফিক্সড হয় যেমন: 401/403)।
+- **Session Renewal Correction**: রিনিউ করার সময় আগে পুরনো `webSocket` ডিসকানেক্ট করা।
+- **Improved Logging**: প্রতিটি কানেকশন এবং এরর লগে টাইমস্ট্যাম্প যোগ করা।
 
-### ৩. টাইমিং এবং প্রসেসিং (Timing Accuracy)
-- **Duration Parser**: বাংলা এবং ইংরেজি সময়ের অনুরোধগুলো আরও নির্ভুলভাবে বোঝার জন্য ইম্প্রুভড রেজেক্স (Regex) ব্যবহার করা হবে।
-- **Safety Margin**: ৫ মিনিটের হার্ড লিমিট নিশ্চিত করা হবে এবং ছোটখাটো নয়েজে গান বন্ধ হওয়া রোধ করা হবে।
+### [Component: UI/State]
 
-### ৪. প্রম্পট টিউনিং
-- **Continuation Prompt**: জারভিসকে আরও স্পষ্টভাবে বলা হবে যে সে যেন কোনো কথা না বলে সরাসরি সুর দিয়ে পরের অংশ শুরু করে।
+#### [MODIFY] [MainViewModel.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/assistant/ui/home/MainViewModel.kt)
+- কানেকশন লস্ট হলে অর্বের (Orb) এনিমেশন এবং স্ট্যাটাস টেক্সট ট্রানজিশন আরও স্মুথ করা।
+- ইউজারের অ্যাকশন (যেমন: মাইক্রোফোন অন করা) যাতে পেন্ডিং কানেকশনের সাথে কনফ্লিক্ট না করে তা নিশ্চিত করা।
 
 ## Verification Plan
 
 ### Manual Verification
-1. **Long Duration Test**: "৫ মিনিট গান গাও" বলে স্টপওয়াচ দিয়ে সময় চেক করা।
-2. **State Flicker Check**: গান চলাকালীন Orb-এর রঙ লাল (SINGING) থেকে নীল (SPEAKING) হয়ে যাচ্ছে কিনা তা দেখা।
-3. **Continuation Smoothness**: এক অংশের পর অন্য অংশ শুরুর মাঝখানের গ্যাপ চেক করা।
+1. **Bad API Key Test**: ভুল কী দিয়ে চেক করা যে সে লুপে না পড়ে সঠিক এরর দেখাচ্ছে কিনা।
+2. **Offline Test**: ইন্টারনেট বন্ধ করে দেখা যে ৫ বার পর সে শান্ত হয়ে যাচ্ছে কিনা।
+3. **Recovery Test**: ৩য় বা ৪র্থ চেষ্টার সময় ইন্টারনেট অন করলে সে সফলভাবে ব্যাক করছে কিনা।
+4. **Stability Test**: ১০ মিনিটের বেশি সেশন চালিয়ে দেখা রিনিউয়াল ঠিকমতো কাজ করছে কিনা।
