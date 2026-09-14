@@ -19,6 +19,7 @@ import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.JarvisApp
 import com.jarvis.assistant.data.model.GeminiConstants
 import com.jarvis.assistant.databinding.ActivitySettingsBinding
+import com.jarvis.assistant.util.DeviceContextSnapshotBuilder
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -39,11 +40,15 @@ class SettingsActivity : AppCompatActivity() {
         loadCurrentSettings()
         setupListeners()
         refreshPermissionStatuses()
+        refreshDeviceContextCards()
     }
 
     override fun onResume() {
         super.onResume()
-        if (::binding.isInitialized) refreshPermissionStatuses()
+        if (::binding.isInitialized) {
+            refreshPermissionStatuses()
+            refreshDeviceContextCards()
+        }
     }
 
     // ============================================================
@@ -326,6 +331,18 @@ class SettingsActivity : AppCompatActivity() {
         binding.btnAccessibilityPermission.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+
+        binding.btnWriteSettingsPermission.setOnClickListener {
+            if (hasWriteSettingsPermission()) {
+                openWriteSettingsPermissionSettings()
+            } else {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                    Uri.parse("package:$packageName")
+                )
+                startActivity(intent)
+            }
+        }
     }
 
     private fun refreshPermissionStatuses() {
@@ -338,6 +355,20 @@ class SettingsActivity : AppCompatActivity() {
         binding.tvAccessibilityPermissionStatus.text =
             if (accessibilityGranted) "Enabled • scroll and click controls are ready" else "Disabled • required for phone control"
         binding.btnAccessibilityPermission.text = if (accessibilityGranted) "Manage" else "Enable"
+
+        val writeSettingsGranted = hasWriteSettingsPermission()
+        binding.tvWriteSettingsPermissionStatus.text =
+            if (writeSettingsGranted) "Granted • brightness control is ready" else "Not granted • brightness control is unavailable"
+        binding.btnWriteSettingsPermission.text = if (writeSettingsGranted) "Manage" else "Allow"
+    }
+
+    private fun refreshDeviceContextCards() {
+        val snapshot = DeviceContextSnapshotBuilder.build(this)
+        binding.tvDeviceMeta.text = "${snapshot.timeText} • ${snapshot.dateText}"
+        binding.tvBatteryStatus.text = "Battery ${snapshot.batteryPercent}% • ${if (snapshot.isCharging) "charging" else "discharging"}"
+        binding.tvConnectionStatus.text = "Network ${snapshot.connectionType} • brightness ${snapshot.brightnessPercent}% • volume ${snapshot.volumePercent}%"
+        binding.tvCurrentAppStatus.text = "Current app: ${snapshot.currentApp}"
+        binding.tvMemoryVaultStatus.text = "Memory vault: ${JarvisApp.instance.memoryVaultRepository.snapshot().size} tracked facts"
     }
 
     private fun hasMicrophonePermission(): Boolean {
@@ -345,6 +376,19 @@ class SettingsActivity : AppCompatActivity() {
             this,
             android.Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasWriteSettingsPermission(): Boolean {
+        return Settings.System.canWrite(this)
+    }
+
+    private fun openWriteSettingsPermissionSettings() {
+        startActivity(
+            Intent(
+                Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                Uri.parse("package:$packageName")
+            )
+        )
     }
 
     private fun openAppPermissionSettings() {

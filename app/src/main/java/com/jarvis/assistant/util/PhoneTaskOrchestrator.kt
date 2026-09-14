@@ -171,7 +171,42 @@ class PhoneTaskOrchestrator(
                 PhoneAction.Recents -> global(action.name(), JarvisAccessibilityService.recents())
                 PhoneAction.Notifications -> global(action.name(), JarvisAccessibilityService.notifications())
                 PhoneAction.QuickSettings -> global(action.name(), JarvisAccessibilityService.quickSettings())
-                is PhoneAction.SetBrightness -> failure(
+                PhoneAction.PlayMedia -> failure(
+                action.name(),
+                "Media control needs a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.PauseMedia -> failure(
+                action.name(),
+                "Media control needs a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.ToggleMedia -> failure(
+                action.name(),
+                "Media state unknown; re-observe before toggling.",
+                retryable = true
+            )
+            PhoneAction.NextTrack -> failure(
+                action.name(),
+                "Next-track requires a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.PreviousTrack -> failure(
+                action.name(),
+                "Previous-track requires a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.ClearText -> failure(
+                action.name(),
+                "Clear text requires a focused editable field and system support.",
+                retryable = true
+            )
+            PhoneAction.PressEnter -> failure(
+                action.name(),
+                "Press enter requires a supported input target.",
+                retryable = true
+            )
+            is PhoneAction.SetBrightness -> failure(
                     action.name(),
                     "Brightness action-এর জন্য system Context executor প্রয়োজন।",
                     retryable = false
@@ -238,6 +273,13 @@ class PhoneTaskOrchestrator(
         PhoneAction.Recents -> "recents"
         PhoneAction.Notifications -> "notifications"
         PhoneAction.QuickSettings -> "quick_settings"
+        PhoneAction.PlayMedia -> "play_media"
+        PhoneAction.PauseMedia -> "pause_media"
+        PhoneAction.ToggleMedia -> "toggle_media"
+        PhoneAction.NextTrack -> "next_track"
+        PhoneAction.PreviousTrack -> "previous_track"
+        PhoneAction.ClearText -> "clear_text"
+        PhoneAction.PressEnter -> "press_enter"
         is PhoneAction.SetBrightness -> "set_brightness"
         is PhoneAction.Wait -> "wait"
     }

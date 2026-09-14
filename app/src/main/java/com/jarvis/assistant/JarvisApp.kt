@@ -4,6 +4,7 @@ import android.app.Application
 import com.jarvis.assistant.data.preferences.AppPreferences
 import com.jarvis.assistant.data.repository.AssistantMemoryRepository
 import com.jarvis.assistant.data.repository.ChatRepository
+import com.jarvis.assistant.data.repository.MemoryVaultRepository
 
 class JarvisApp : Application() {
 
@@ -16,12 +17,16 @@ class JarvisApp : Application() {
     lateinit var assistantMemoryRepository: AssistantMemoryRepository
         private set
 
+    lateinit var memoryVaultRepository: MemoryVaultRepository
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
         preferences = AppPreferences(this)
         chatRepository = ChatRepository(preferences)
         assistantMemoryRepository = AssistantMemoryRepository(preferences)
+        memoryVaultRepository = MemoryVaultRepository(preferences)
     }
 
     companion object {

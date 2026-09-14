@@ -26,6 +26,17 @@ object JarvisToolRegistry {
         declaration("recents", "Open recent apps", emptyMap(), emptyList()),
         declaration("notifications", "Open notifications", emptyMap(), emptyList()),
         declaration("quick_settings", "Open quick settings", emptyMap(), emptyList()),
+        declaration("open_notifications", "Open Android notification panel", emptyMap(), emptyList()),
+        declaration("open_quick_settings", "Open Android quick settings panel", emptyMap(), emptyList()),
+        declaration("play_media", "Attempt a safe media play action when a supported media session is active", emptyMap(), emptyList()),
+        declaration("pause_media", "Attempt a safe media pause action when a supported media session is active", emptyMap(), emptyList()),
+        declaration("toggle_media", "Toggle between play and pause when the current media state is known", emptyMap(), emptyList()),
+        declaration("next_track", "Request next media item when a supported media session is active", emptyMap(), emptyList()),
+        declaration("previous_track", "Request previous media item when a supported media session is active", emptyMap(), emptyList()),
+        declaration("clear_text", "Clear current editable field when supported by Android accessibility", mapOf(
+            "text" to property("string", "Target field text or blank")
+        ), listOf("text")),
+        declaration("press_enter", "Submit the active input target when supported by Android accessibility", emptyMap(), emptyList()),
         declaration("youtube_search", "Search YouTube for a query", mapOf(
             "query" to property("string", "YouTube query")
         ), listOf("query")),

@@ -14,7 +14,9 @@ import com.jarvis.assistant.data.model.GeminiConstants
 import com.jarvis.assistant.data.preferences.AppPreferences
 import com.jarvis.assistant.data.repository.AssistantMemoryRepository
 import com.jarvis.assistant.data.repository.ChatRepository
+import com.jarvis.assistant.data.repository.MemoryVaultRepository
 import com.jarvis.assistant.network.GeminiLiveWebSocket
+import com.jarvis.assistant.util.DeviceContextSnapshotBuilder
 import com.jarvis.assistant.util.AssistantCommandParser
 import com.jarvis.assistant.util.AssistantCommandType
 import com.jarvis.assistant.util.AssistantToolExecutor
@@ -48,6 +50,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences: AppPreferences = (application as JarvisApp).preferences
     private val chatRepository: ChatRepository = (application as JarvisApp).chatRepository
     private val assistantMemoryRepository: AssistantMemoryRepository = (application as JarvisApp).assistantMemoryRepository
+    private val memoryVaultRepository: MemoryVaultRepository = (application as JarvisApp).memoryVaultRepository
 
     private val _isSessionOn = MutableStateFlow(false)
     val isSessionOn: StateFlow<Boolean> = _isSessionOn.asStateFlow()
@@ -167,6 +170,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _personalityName.value = preferences.personality
         _isMicMuted.value = preferences.isMicMuted
         audioRecorder?.setMuted(preferences.isMicMuted)
+        refreshDeviceMemorySnapshot()
+    }
+
+    private fun refreshDeviceMemorySnapshot() {
+        val snapshot = DeviceContextSnapshotBuilder.build(getApplication())
+        memoryVaultRepository.upsert("device_context", snapshot.toMemorySummary())
+        memoryVaultRepository.upsert("battery", "${snapshot.batteryPercent}%")
+        memoryVaultRepository.upsert("charging", if (snapshot.isCharging) "charging" else "discharging")
+        memoryVaultRepository.upsert("current_app", snapshot.currentApp)
+        memoryVaultRepository.upsert("time", snapshot.timeText)
+        memoryVaultRepository.upsert("date", snapshot.dateText)
+        memoryVaultRepository.upsert("network", snapshot.connectionType)
+        memoryVaultRepository.upsert("brightness", "${snapshot.brightnessPercent}%")
+        memoryVaultRepository.upsert("volume", "${snapshot.volumePercent}%")
+    }
+
+    private fun buildRuntimeMemoryContext(): String {
+        val chatMemory = chatRepository.buildMemoryContext()
+        val vaultMap = memoryVaultRepository.snapshot()
+        val vaultEntries = vaultMap
+            .filterKeys { it.isNotBlank() }
+            .toSortedMap()
+            .map { (key, value) -> "$key: $value" }
+            .joinToString(" | ")
+        val deviceSnapshot = DeviceContextSnapshotBuilder.build(getApplication())
+        val deviceFacts = "device_context: ${deviceSnapshot.toMemorySummary()}"
+        return buildList {
+            if (chatMemory.isNotBlank()) add(chatMemory)
+            if (vaultEntries.isNotBlank()) add(vaultEntries)
+            if (deviceFacts.isNotBlank()) add(deviceFacts)
+        }.joinToString("\n")
     }
 
     fun toggleSession() {
@@ -222,8 +256,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ).apply { start() }
 
         // 2. Gemini Live WebSocket Connection
+        refreshDeviceMemorySnapshot()
         val isSinging = singingManager.isActive()
-        val memoryContext = chatRepository.buildMemoryContext()
+        val memoryContext = buildRuntimeMemoryContext()
         val systemPrompt = PromptGenerator.generateSystemPrompt(
             personality = preferences.personality,
             userName = preferences.userName,

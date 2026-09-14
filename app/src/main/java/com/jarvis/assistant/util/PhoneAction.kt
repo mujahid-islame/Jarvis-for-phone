@@ -19,6 +19,13 @@ sealed class PhoneAction {
     data object Recents : PhoneAction()
     data object Notifications : PhoneAction()
     data object QuickSettings : PhoneAction()
+    data object PlayMedia : PhoneAction()
+    data object PauseMedia : PhoneAction()
+    data object ToggleMedia : PhoneAction()
+    data object NextTrack : PhoneAction()
+    data object PreviousTrack : PhoneAction()
+    data object ClearText : PhoneAction()
+    data object PressEnter : PhoneAction()
     data class SetBrightness(val percent: Int) : PhoneAction()
     data class Wait(val milliseconds: Long) : PhoneAction()
 

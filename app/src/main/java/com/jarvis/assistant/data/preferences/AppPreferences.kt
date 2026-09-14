@@ -8,6 +8,7 @@ import com.jarvis.assistant.data.model.AssistantNote
 import com.jarvis.assistant.data.model.AssistantReminder
 import com.jarvis.assistant.data.model.ChatTurn
 import com.jarvis.assistant.data.model.GeminiConstants
+import com.jarvis.assistant.data.model.MemoryVaultEntry
 
 class AppPreferences(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -25,6 +26,7 @@ class AppPreferences(context: Context) {
         private const val KEY_CHAT_HISTORY = "key_chat_history"
         private const val KEY_NOTES = "key_assistant_notes"
         private const val KEY_REMINDERS = "key_assistant_reminders"
+        private const val KEY_MEMORY_VAULT = "key_memory_vault"
     }
 
     var apiKey: String
@@ -103,6 +105,20 @@ class AppPreferences(context: Context) {
 
     fun saveReminders(reminders: List<AssistantReminder>) {
         prefs.edit().putString(KEY_REMINDERS, gson.toJson(reminders)).apply()
+    }
+
+    fun loadMemoryVault(): List<MemoryVaultEntry> {
+        val json = prefs.getString(KEY_MEMORY_VAULT, null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<MemoryVaultEntry>>() {}.type
+            gson.fromJson(json, type) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveMemoryVault(entries: List<MemoryVaultEntry>) {
+        prefs.edit().putString(KEY_MEMORY_VAULT, gson.toJson(entries)).apply()
     }
 
     fun clearChatHistory() {
