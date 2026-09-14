@@ -70,10 +70,11 @@ class PhoneAgent(
     suspend fun run(
         goal: TaskGoal,
         planner: PhonePlanner,
-        onStateChanged: (PhoneTaskState) -> Unit = {}
+        onStateChanged: (PhoneTaskState) -> Unit = {},
+        onActionResult: (PlannerDecision, ActionResult) -> Unit = { _, _ -> }
     ): TaskResult = withContext(Dispatchers.Default) {
         withTimeoutOrNull(taskTimeoutMs.coerceAtLeast(1L)) {
-            executeLoop(goal, planner, onStateChanged)
+            executeLoop(goal, planner, onStateChanged, onActionResult)
         } ?: TaskResult(
             success = false,
             completedSteps = 0,
@@ -94,7 +95,8 @@ class PhoneAgent(
     private suspend fun executeLoop(
         goal: TaskGoal,
         planner: PhonePlanner,
-        onStateChanged: (PhoneTaskState) -> Unit
+        onStateChanged: (PhoneTaskState) -> Unit,
+        onActionResult: (PlannerDecision, ActionResult) -> Unit
     ): TaskResult {
         var taskContext = TaskContext(goal = goal)
         val actionHistory = mutableListOf<String>()
@@ -143,6 +145,7 @@ class PhoneAgent(
             actionHistory += actionKey
             onStateChanged(PhoneTaskState.EXECUTING)
             val actionResult = executeDecision(decision)
+            onActionResult(decision, actionResult)
             onStateChanged(PhoneTaskState.VERIFYING)
             taskContext = taskContext.copy(
                 currentScreenFingerprint = screen?.fingerprint(),
@@ -169,6 +172,16 @@ class PhoneAgent(
 
     private suspend fun executeDecision(decision: PlannerDecision): ActionResult {
         val name = decision.action ?: return ActionResult(false, "planner", "Action missing।", VerificationStatus.FAILED)
+        if (name in setOf("open_app", "list_apps", "youtube_search", "web_search", "open_settings")) {
+            val result = AssistantToolExecutor.executeFunction(context, name, decision.arguments)
+            return ActionResult(
+                success = result.success,
+                action = name,
+                message = result.message,
+                verification = if (result.success) VerificationStatus.VERIFIED else VerificationStatus.FAILED,
+                retryable = !result.success
+            )
+        }
         return when (name) {
             "click_text" -> orchestrator.execute(PhoneAction.ClickText(decision.arguments.string("text")))
             "click_description" -> orchestrator.execute(PhoneAction.ClickDescription(decision.arguments.string("description")))

@@ -21,10 +21,15 @@ import com.jarvis.assistant.util.AssistantToolExecutor
 import com.jarvis.assistant.util.AssistantToolResult
 import com.jarvis.assistant.util.DurationParser
 import com.jarvis.assistant.util.PhonePlannerContract
+import com.jarvis.assistant.util.PhoneAgent
+import com.jarvis.assistant.util.PhonePlanner
+import com.jarvis.assistant.util.PlannerValidation
+import com.jarvis.assistant.util.PhoneTaskRouter
 import com.jarvis.assistant.util.PromptGenerator
 import com.jarvis.assistant.util.WakeWordDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,6 +96,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val currentTurnUserText = StringBuilder()
     private val currentTurnAssistantText = StringBuilder()
     private var handledCommandType: AssistantCommandType? = null
+    private var activePhoneGoal: com.jarvis.assistant.util.TaskGoal? = null
+    private var activePhoneTaskJob: Job? = null
+    private var plannerDecisionChannel: Channel<PlannerValidation>? = null
+    private var pendingPlannerCallId: String? = null
+    private var pendingPlannerCallName: String? = null
     private var currentTurnEmotion = "NEUTRAL"
     private var currentTurnEmotionConfidence: Double? = null
     private var isCurrentTurnInterrupted = false
@@ -251,6 +261,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     val transcript = currentTurnUserText.toString().trim()
+                    val routed = PhoneTaskRouter.route(transcript)
+                    if (routed.route == com.jarvis.assistant.util.RequestRoute.CANCEL_TASK) {
+                        activePhoneTaskJob?.cancel()
+                        plannerDecisionChannel?.close()
+                        activePhoneTaskJob = null
+                        plannerDecisionChannel = null
+                        activePhoneGoal = null
+                        currentTurnAssistantText.append("ঠিক আছে, চলমান phone task বন্ধ করেছি।")
+                        liveWebSocket?.sendText("User cancelled the active phone task. Confirm cancellation briefly in Bangla.")
+                        return
+                    }
+                    if (routed.route == com.jarvis.assistant.util.RequestRoute.PHONE_TASK && routed.goal != null) {
+                        if (activePhoneTaskJob?.isActive == true) return
+                        if (!PhoneTaskRouter.isConfident(routed.goal)) {
+                            liveWebSocket?.sendText("The phone task goal is ambiguous. Ask the user for the minimum clarification needed before acting.")
+                            return
+                        }
+                        activePhoneTaskJob?.cancel()
+                        plannerDecisionChannel?.close()
+                        val goal = routed.goal
+                        activePhoneGoal = routed.goal
+                        plannerDecisionChannel = Channel(capacity = 1)
+                        activePhoneTaskJob = viewModelScope.launch {
+                            val channel = plannerDecisionChannel ?: return@launch
+                            val agent = PhoneAgent(getApplication())
+                            val result = agent.run(
+                                goal = goal,
+                                planner = PhonePlanner { context, screen ->
+                                    liveWebSocket?.sendText(buildPhoneTaskPlanningInstruction(goal, context, screen))
+                                    channel.receive()
+                                },
+                                onActionResult = { decision, actionResult ->
+                                    val callId = pendingPlannerCallId
+                                    val name = pendingPlannerCallName ?: decision.action.orEmpty()
+                                    if (!callId.isNullOrBlank()) {
+                                        liveWebSocket?.sendToolResponse(
+                                            callId = callId,
+                                            name = name,
+                                            success = actionResult.success,
+                                            message = actionResult.message
+                                        )
+                                        pendingPlannerCallId = null
+                                        pendingPlannerCallName = null
+                                    }
+                                }
+                            )
+                            currentTurnAssistantText.append(result.message)
+                            liveWebSocket?.sendText("Phone task result: ${result.message}. Respond naturally in Bangla without exposing internal state.")
+                            activePhoneGoal = null
+                            plannerDecisionChannel = null
+                            activePhoneTaskJob = null
+                        }
+                        return
+                    }
                     val command = AssistantCommandParser.parse(transcript)
                     if (command != null &&
                         command.type != handledCommandType &&
@@ -302,6 +366,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 override fun onToolCall(callId: String, name: String, arguments: Map<String, Any?>) {
                     viewModelScope.launch {
                         val validation = PhonePlannerContract.validateFunctionCall(name, arguments)
+                        if (activePhoneTaskJob?.isActive == true && plannerDecisionChannel != null) {
+                            if (!validation.valid) {
+                                liveWebSocket?.sendToolResponse(
+                                    callId = callId,
+                                    name = name,
+                                    success = false,
+                                    message = validation.message
+                                )
+                            } else {
+                                pendingPlannerCallId = callId
+                                pendingPlannerCallName = name
+                            }
+                            plannerDecisionChannel?.send(validation)
+                            return@launch
+                        }
                         val result = if (!validation.valid) {
                             AssistantToolResult(
                                 success = false,
@@ -587,6 +666,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             type == AssistantCommandType.REMINDER ||
             type == AssistantCommandType.TIMER ||
             type == AssistantCommandType.ALARM
+    }
+
+    private fun buildPhoneTaskInstruction(goal: com.jarvis.assistant.util.TaskGoal): String {
+        return """
+PHONE_TASK_START
+Goal objective: ${goal.objective}
+Target app: ${goal.targetApp ?: "unknown"}
+Constraints: ${goal.constraints.joinToString("; ").ifBlank { "none" }}
+Success criteria: ${goal.successCriteria.joinToString("; ").ifBlank { "observe and verify the user's goal" }}
+
+Act as the JARVIS phone-task planner. Use only registered structured tools.
+Choose exactly one next action. Observe the current screen before acting, validate the action,
+execute it, inspect the result, and re-plan. Never claim completion without evidence.
+If the target is ambiguous, ask for clarification. If the user cancels, stop immediately.
+PHONE_TASK_END
+""".trimIndent()
+    }
+
+    private fun buildPhoneTaskPlanningInstruction(
+        goal: com.jarvis.assistant.util.TaskGoal,
+        context: com.jarvis.assistant.util.TaskContext,
+        screen: com.jarvis.assistant.accessibility.ScreenContext?
+    ): String {
+        val elements = screen?.nodes?.take(80)?.joinToString(" | ") { node ->
+            listOfNotNull(node.text, node.description).joinToString("/") +
+                "[idless role=${node.role},click=${node.clickable},edit=${node.editable},scroll=${node.scrollable},bounds=${node.bounds.flattenToString()}]"
+        }.orEmpty().take(6000)
+        return """
+PHONE_TASK_NEXT_ACTION
+Goal: ${goal.objective}
+Target app: ${goal.targetApp ?: "unknown"}
+Success criteria: ${goal.successCriteria.joinToString("; ")}
+Current app: ${context.currentApp ?: screen?.packageName ?: "unknown"}
+Current screen fingerprint: ${context.currentScreenFingerprint ?: "none"}
+Completed steps: ${context.completedSteps}
+Planner calls remaining: ${(20 - context.plannerCalls).coerceAtLeast(0)}
+Last action: ${context.lastDecision?.action ?: "none"}
+Last result: ${context.lastActionResult?.message ?: "none"}
+Visible elements: $elements
+
+Return exactly one structured tool call for the next safe action, or a completion/clarification status.
+Observe before acting. Do not use stale elements, coordinates, or unlisted tools. Verify after one action.
+PHONE_TASK_NEXT_ACTION_END
+""".trimIndent()
     }
 
     private fun hasCommandPayload(

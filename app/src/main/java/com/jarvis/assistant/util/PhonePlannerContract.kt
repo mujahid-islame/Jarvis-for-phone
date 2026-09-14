@@ -41,8 +41,6 @@ object PhonePlannerContract {
     private val allowedActions = setOf(
         "open_app",
         "list_apps",
-        "get_screen_context",
-        "get_current_app",
         "click_text",
         "click_description",
         "click_element",
