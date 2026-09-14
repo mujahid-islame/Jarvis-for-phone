@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.jarvis.assistant.data.model.AssistantNote
+import com.jarvis.assistant.data.model.AssistantReminder
 import com.jarvis.assistant.data.model.ChatTurn
 import com.jarvis.assistant.data.model.GeminiConstants
 
@@ -18,8 +20,11 @@ class AppPreferences(context: Context) {
         private const val KEY_VOICE = "key_voice"
         private const val KEY_PERSONALITY = "key_personality"
         private const val KEY_USER_NAME = "key_user_name"
+        private const val KEY_LANGUAGE = "key_language"
         private const val KEY_MIC_MUTED = "key_mic_muted"
         private const val KEY_CHAT_HISTORY = "key_chat_history"
+        private const val KEY_NOTES = "key_assistant_notes"
+        private const val KEY_REMINDERS = "key_assistant_reminders"
     }
 
     var apiKey: String
@@ -49,6 +54,10 @@ class AppPreferences(context: Context) {
         get() = prefs.getString(KEY_USER_NAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_USER_NAME, value.trim()).apply()
 
+    var assistantLanguage: String
+        get() = prefs.getString(KEY_LANGUAGE, "বাংলা") ?: "বাংলা"
+        set(value) = prefs.edit().putString(KEY_LANGUAGE, value.trim()).apply()
+
     var isMicMuted: Boolean
         get() = prefs.getBoolean(KEY_MIC_MUTED, false)
         set(value) = prefs.edit().putBoolean(KEY_MIC_MUTED, value).apply()
@@ -66,6 +75,34 @@ class AppPreferences(context: Context) {
     fun saveChatHistory(history: List<ChatTurn>) {
         val json = gson.toJson(history)
         prefs.edit().putString(KEY_CHAT_HISTORY, json).apply()
+    }
+
+    fun loadNotes(): List<AssistantNote> {
+        val json = prefs.getString(KEY_NOTES, null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<AssistantNote>>() {}.type
+            gson.fromJson(json, type) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveNotes(notes: List<AssistantNote>) {
+        prefs.edit().putString(KEY_NOTES, gson.toJson(notes)).apply()
+    }
+
+    fun loadReminders(): List<AssistantReminder> {
+        val json = prefs.getString(KEY_REMINDERS, null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<AssistantReminder>>() {}.type
+            gson.fromJson(json, type) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveReminders(reminders: List<AssistantReminder>) {
+        prefs.edit().putString(KEY_REMINDERS, gson.toJson(reminders)).apply()
     }
 
     fun clearChatHistory() {

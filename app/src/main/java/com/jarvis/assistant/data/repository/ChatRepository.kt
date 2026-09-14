@@ -17,6 +17,44 @@ class ChatRepository(private val preferences: AppPreferences) {
     }
 
     @Synchronized
+    fun buildMemoryContext(limit: Int = 20): String {
+        if (limit <= 0) return ""
+
+        val recentTurns = _turns.value.takeLast(limit)
+        if (recentTurns.isEmpty()) return ""
+
+        val memoryEntries = recentTurns.mapNotNull { turn ->
+            val userText = turn.userTranscript.trim()
+            val assistantText = turn.jarvisResponse.trim()
+            when {
+                userText.isEmpty() -> null
+                assistantText.isEmpty() -> "User asked: ${sanitizeForMemory(userText)}"
+                else -> "User asked: ${sanitizeForMemory(userText)}. Assistant replied: ${sanitizeForMemory(assistantText)}"
+            }
+        }
+
+        val compact = memoryEntries
+            .distinct()
+            .takeLast(8)
+            .joinToString(" | ")
+            .trim()
+
+        return if (compact.isNotBlank()) {
+            "USER MEMORY\n- $compact"
+        } else {
+            ""
+        }
+    }
+
+    private fun sanitizeForMemory(text: String): String {
+        return text
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("\\[EMOTION:[^\\]]+\\]"), "")
+            .trim()
+            .take(220)
+    }
+
+    @Synchronized
     fun addTurn(turn: ChatTurn) {
         val currentList = _turns.value.toMutableList()
 

@@ -2,13 +2,20 @@ package com.jarvis.assistant.ui.settings
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import com.jarvis.assistant.JarvisApp
 import com.jarvis.assistant.data.model.GeminiConstants
 import com.jarvis.assistant.databinding.ActivitySettingsBinding
@@ -31,6 +38,12 @@ class SettingsActivity : AppCompatActivity() {
         setupDropdowns()
         loadCurrentSettings()
         setupListeners()
+        refreshPermissionStatuses()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::binding.isInitialized) refreshPermissionStatuses()
     }
 
     // ============================================================
@@ -297,6 +310,59 @@ class SettingsActivity : AppCompatActivity() {
                 ).show()
             }
         }
+
+        binding.btnMicrophonePermission.setOnClickListener {
+            if (hasMicrophonePermission()) {
+                openAppPermissionSettings()
+            } else {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(android.Manifest.permission.RECORD_AUDIO),
+                    REQUEST_MICROPHONE
+                )
+            }
+        }
+
+        binding.btnAccessibilityPermission.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+    }
+
+    private fun refreshPermissionStatuses() {
+        val microphoneGranted = hasMicrophonePermission()
+        binding.tvMicrophonePermissionStatus.text =
+            if (microphoneGranted) "Granted • voice input is ready" else "Not granted • voice input is unavailable"
+        binding.btnMicrophonePermission.text = if (microphoneGranted) "Manage" else "Allow"
+
+        val accessibilityGranted = JarvisAccessibilityService.isEnabled()
+        binding.tvAccessibilityPermissionStatus.text =
+            if (accessibilityGranted) "Enabled • scroll and click controls are ready" else "Disabled • required for phone control"
+        binding.btnAccessibilityPermission.text = if (accessibilityGranted) "Manage" else "Enable"
+    }
+
+    private fun hasMicrophonePermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun openAppPermissionSettings() {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName")
+            )
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_MICROPHONE) refreshPermissionStatuses()
     }
 
     // ============================================================
@@ -364,6 +430,10 @@ class SettingsActivity : AppCompatActivity() {
         ).show()
 
         finish()
+    }
+
+    companion object {
+        private const val REQUEST_MICROPHONE = 4101
     }
 }
 

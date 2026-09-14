@@ -18,6 +18,84 @@
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
+        android:layout_height="96dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_profile_header"
+        android:paddingHorizontal="14dp">
+
+        <TextView
+            android:id="@+id/tvProfileAvatar"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_profile_avatar"
+            android:gravity="center"
+            android:text="J"
+            android:textColor="@color/primary_cyan"
+            android:textSize="27sp"
+            android:textStyle="bold"
+            android:fontFamily="serif"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/tvProfileName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:text="JARVIS"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.12"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/tvProfileAvatar"
+            app:layout_constraintTop_toTopOf="@id/tvProfileAvatar" />
+
+        <TextView
+            android:id="@+id/tvProfileSubtitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_marginTop="4dp"
+            android:text="PERSONAL AI COMPANION"
+            android:textColor="@color/text_secondary"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/tvProfileAvatar"
+            app:layout_constraintTop_toBottomOf="@id/tvProfileName" />
+
+        <View
+            android:id="@+id/viewProfileStatus"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginStart="14dp"
+            android:layout_marginTop="7dp"
+            android:background="@drawable/bg_power_button"
+            android:backgroundTint="@color/status_green"
+            app:layout_constraintStart_toEndOf="@id/tvProfileAvatar"
+            app:layout_constraintTop_toBottomOf="@id/tvProfileSubtitle" />
+
+        <TextView
+            android:id="@+id/tvProfileStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="ONLINE"
+            android:textColor="@color/status_green"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.12"
+            app:layout_constraintBottom_toBottomOf="@id/viewProfileStatus"
+            app:layout_constraintStart_toEndOf="@id/viewProfileStatus"
+            app:layout_constraintTop_toTopOf="@id/viewProfileStatus" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingHorizontal="20dp"
         android:paddingBottom="12dp">
@@ -25,7 +103,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/chat_history_title"
+            android:text="Conversation Log"
             android:textColor="@color/text_primary"
             android:textSize="17sp"
             android:textStyle="bold"
@@ -46,6 +124,67 @@
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent" />
     </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/border_subtle" />
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="9dp">
+
+        <TextView
+            android:id="@+id/tvMemoryLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="MEMORY VAULT"
+            android:textColor="@color/primary_cyan"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.12"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <Button
+            android:id="@+id/btnAddMemory"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="10dp"
+            android:text="+ ADD"
+            android:textColor="@color/primary_cyan"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <TextView
+        android:id="@+id/tvMemoryEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No saved notes or reminders yet."
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="12dp"
+        android:visibility="visible" />
+
+    <LinearLayout
+        android:id="@+id/memoryContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="12dp"
+        android:visibility="gone" />
 
     <View
         android:layout_width="match_parent"

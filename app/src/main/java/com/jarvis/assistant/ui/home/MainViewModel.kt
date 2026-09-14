@@ -12,10 +12,15 @@ import com.jarvis.assistant.data.model.ChatTurn
 import com.jarvis.assistant.data.model.ConversationState
 import com.jarvis.assistant.data.model.GeminiConstants
 import com.jarvis.assistant.data.preferences.AppPreferences
+import com.jarvis.assistant.data.repository.AssistantMemoryRepository
 import com.jarvis.assistant.data.repository.ChatRepository
 import com.jarvis.assistant.network.GeminiLiveWebSocket
+import com.jarvis.assistant.util.AssistantCommandParser
+import com.jarvis.assistant.util.AssistantCommandType
+import com.jarvis.assistant.util.AssistantToolExecutor
 import com.jarvis.assistant.util.DurationParser
 import com.jarvis.assistant.util.PromptGenerator
+import com.jarvis.assistant.util.WakeWordDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -35,6 +40,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val preferences: AppPreferences = (application as JarvisApp).preferences
     private val chatRepository: ChatRepository = (application as JarvisApp).chatRepository
+    private val assistantMemoryRepository: AssistantMemoryRepository = (application as JarvisApp).assistantMemoryRepository
 
     private val _isSessionOn = MutableStateFlow(false)
     val isSessionOn: StateFlow<Boolean> = _isSessionOn.asStateFlow()
@@ -79,8 +85,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val singingManager = SingingSessionManager()
 
     private var timeClockJob: Job? = null
+    private var pendingCommandJob: Job? = null
     private val currentTurnUserText = StringBuilder()
     private val currentTurnAssistantText = StringBuilder()
+    private var handledCommandType: AssistantCommandType? = null
     private var currentTurnEmotion = "NEUTRAL"
     private var currentTurnEmotionConfidence: Double? = null
     private var isCurrentTurnInterrupted = false
@@ -157,6 +165,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun ensureSessionStarted() {
+        if (!_isSessionOn.value) {
+            startSession()
+        }
+    }
+
     private fun startSession() {
         val apiKey = preferences.apiKey.trim()
         if (apiKey.isBlank()) {
@@ -168,6 +182,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         _isSessionOn.value = true
         _conversationState.value = ConversationState.IDLE
+        handledCommandType = null
         currentTurnAssistantText.clear()
 
         // 1. Output Player (24kHz Mono Output)
@@ -196,11 +211,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // 2. Gemini Live WebSocket Connection
         val isSinging = singingManager.isActive()
+        val memoryContext = chatRepository.buildMemoryContext()
         val systemPrompt = PromptGenerator.generateSystemPrompt(
             personality = preferences.personality,
             userName = preferences.userName,
             isSingingSession = isSinging,
-            requestedDurationMs = if (isSinging) singingManager.targetDurationMs() else 0L
+            requestedDurationMs = if (isSinging) singingManager.targetDurationMs() else 0L,
+            memoryContext = memoryContext
         )
 
         liveWebSocket = GeminiLiveWebSocket(
@@ -227,8 +244,72 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 override fun onUserTextReceived(text: String) {
                     currentTurnUserText.append(text)
+                    if (WakeWordDetector.detect(text)) {
+                        _conversationState.value = ConversationState.LISTENING
+                    }
+
+                    val transcript = currentTurnUserText.toString().trim()
+                    val command = AssistantCommandParser.parse(transcript)
+                    if (command != null &&
+                        command.type != handledCommandType &&
+                        hasCommandPayload(command, transcript)
+                    ) {
+                        handledCommandType = command.type
+                        if (isActionCommand(command.type)) {
+                            pendingCommandJob?.cancel()
+                            pendingCommandJob = viewModelScope.launch {
+                                delay(650)
+                                val latestTranscript = currentTurnUserText.toString().trim()
+                                val latestCommand = AssistantCommandParser.parse(latestTranscript)
+                                if (latestCommand == null ||
+                                    latestCommand.type != command.type ||
+                                    !hasCommandPayload(latestCommand, latestTranscript)
+                                ) {
+                                    handledCommandType = null
+                                    return@launch
+                                }
+
+                                persistVoiceCommand(latestCommand, latestTranscript)
+                                val response = if (isToolCommand(latestCommand.type)) {
+                                    val result = AssistantToolExecutor.executeResult(getApplication(), latestCommand)
+                                    if (result.success) {
+                                        "TOOL_RESULT_SUCCESS: ${result.message}\nTell the user briefly what was completed."
+                                    } else {
+                                        "TOOL_RESULT_FAILURE: ${result.message}\nDo not claim this action was completed. Explain the failure briefly."
+                                    }
+                                } else {
+                                    AssistantCommandParser.buildAssistantResponse(latestCommand)
+                                }
+                                currentTurnAssistantText.append(response)
+                                liveWebSocket?.sendText(response)
+                            }
+                        } else {
+                            persistVoiceCommand(command, transcript)
+                            val response = AssistantCommandParser.buildAssistantResponse(command)
+                            currentTurnAssistantText.append(response)
+                            liveWebSocket?.sendText(response)
+                        }
+                        return
+                    }
+
                     if (!handleModeSwitchCommand(text)) {
                         checkSingingIntent(text)
+                    }
+                }
+
+                override fun onToolCall(callId: String, name: String, arguments: Map<String, Any?>) {
+                    viewModelScope.launch {
+                        val result = AssistantToolExecutor.executeFunction(
+                            context = getApplication(),
+                            name = name,
+                            arguments = arguments
+                        )
+                        liveWebSocket?.sendToolResponse(
+                            callId = callId,
+                            name = name,
+                            success = result.success,
+                            message = result.message
+                        )
                     }
                 }
 
@@ -267,6 +348,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     audioPlayer?.flush()
                     currentTurnAssistantText.clear()
                     currentTurnUserText.clear()
+                    handledCommandType = null
                     _conversationState.value = ConversationState.LISTENING
                 }
 
@@ -440,7 +522,100 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun persistVoiceCommand(command: com.jarvis.assistant.util.AssistantCommand, text: String) {
+        when (command.type) {
+            AssistantCommandType.REMINDER -> {
+                val title = "রিমাইন্ডার"
+                val reminderText = text.replace(Regex("(?i)(reminder|মনে রাখো|মনে রাখবেন|রিমাইন্ডার)"), "").trim()
+                if (reminderText.isNotBlank()) {
+                    assistantMemoryRepository.addReminder(
+                        title = title,
+                        message = reminderText,
+                        scheduledAt = System.currentTimeMillis() + 60 * 60 * 1000L
+                    )
+                }
+            }
+            AssistantCommandType.NOTE -> {
+                val noteText = text.replace(Regex("(?i)(note|নোট|নোট রাখো|write note|save note)"), "").trim()
+                if (noteText.isNotBlank()) {
+                    assistantMemoryRepository.addNote("নোট", noteText)
+                }
+            }
+            AssistantCommandType.TIMER -> {
+                val minutes = extractMinutes(text)
+                val durationMs = if (minutes > 0) minutes * 60L * 1000L else 5L * 60L * 1000L
+                assistantMemoryRepository.addReminder(
+                    title = "টাইমার",
+                    message = text,
+                    scheduledAt = System.currentTimeMillis() + durationMs
+                )
+            }
+            AssistantCommandType.ALARM -> {
+                assistantMemoryRepository.addReminder(
+                    title = "অ্যালার্ম",
+                    message = text,
+                    scheduledAt = System.currentTimeMillis() + 60 * 60 * 1000L
+                )
+            }
+            else -> Unit
+        }
+    }
+
+    private fun isToolCommand(type: AssistantCommandType): Boolean {
+        return type == AssistantCommandType.WEB_SEARCH ||
+            type == AssistantCommandType.YOUTUBE_SEARCH ||
+            type == AssistantCommandType.PHONE_NAVIGATION ||
+            type == AssistantCommandType.WEATHER ||
+            type == AssistantCommandType.NEWS ||
+            type == AssistantCommandType.DEVICE_CONTROL ||
+            type == AssistantCommandType.APP_AUTOMATION
+    }
+
+    private fun isActionCommand(type: AssistantCommandType): Boolean {
+        return isToolCommand(type) ||
+            type == AssistantCommandType.NOTE ||
+            type == AssistantCommandType.REMINDER ||
+            type == AssistantCommandType.TIMER ||
+            type == AssistantCommandType.ALARM
+    }
+
+    private fun hasCommandPayload(
+        command: com.jarvis.assistant.util.AssistantCommand,
+        transcript: String
+    ): Boolean {
+        return when (command.type) {
+            AssistantCommandType.WEB_SEARCH -> transcript.replace(
+                Regex("(?i)^(search for|search|google|look up|ওয়েবে খুঁজে দেখ|ওয়েবে খুঁজে দেখ|সার্চ কর)"),
+                ""
+            ).trim().length > 1
+            AssistantCommandType.YOUTUBE_SEARCH -> transcript.replace(
+                Regex("(?i)(hey jarvis|ok jarvis|jarvis|জারভিস|search youtube for|youtube search|search on youtube|search in youtube|youtube এ সার্চ কর|youtube এ খুঁজে দেখ|ইউটিউবে সার্চ করো?|ইউটিউবে খুঁজে দেখো?)"),
+                ""
+            ).replace(Regex("(?i)^(for|on|in)\\s+"), "").trim().length > 2
+            AssistantCommandType.APP_AUTOMATION -> transcript
+                .replace(Regex("(?i)\\b(please|can you|could you|open|launch|start)\\b"), "")
+                .replace(Regex("(খোলো|খুলে দাও|চালু কর|দয়া করে|দাও)"), "")
+                .trim().length > 2
+            AssistantCommandType.NOTE -> transcript.replace(
+                Regex("(?i)(note|নোট|নোট রাখো|write note|save note)"),
+                ""
+            ).trim().isNotBlank()
+            AssistantCommandType.REMINDER -> transcript.replace(
+                Regex("(?i)(reminder|remember|মনে রাখো|মনে রাখবেন|রিমাইন্ডার|কাজ মনে রাখো)"),
+                ""
+            ).trim().isNotBlank()
+            else -> true
+        }
+    }
+
+    private fun extractMinutes(text: String): Long {
+        val match = Regex("(\\d+)").find(text)
+        return match?.value?.toLongOrNull() ?: 0L
+    }
+
     private fun finalizeTurn() {
+        pendingCommandJob?.cancel()
+        pendingCommandJob = null
         val userText = currentTurnUserText.toString().trim()
         val assistantText = currentTurnAssistantText.toString().trim()
 
@@ -461,6 +636,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Reset turn state
         currentTurnAssistantText.clear()
         currentTurnUserText.clear()
+        handledCommandType = null
         currentTurnEmotion = "NEUTRAL"
         _currentEmotion.value = "NEUTRAL"
         currentTurnEmotionConfidence = null

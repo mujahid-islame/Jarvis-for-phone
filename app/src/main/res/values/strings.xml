@@ -29,4 +29,5 @@
     <string name="chat_history_title">Conversation History</string>
     <string name="no_history">No conversation turns yet.</string>
     <string name="clear_history">Clear History</string>
+    <string name="accessibility_service_description">Allows JARVIS to scroll screens and click requested visible controls.</string>
 </resources>

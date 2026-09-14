@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.GravityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -22,6 +23,7 @@ import com.jarvis.assistant.data.model.ConversationState
 import com.jarvis.assistant.databinding.ActivityMainBinding
 import com.jarvis.assistant.ui.chat.ChatHistoryBottomSheet
 import com.jarvis.assistant.ui.orb.OrbHelper
+import com.jarvis.assistant.service.JarvisVoiceForegroundService
 import com.jarvis.assistant.ui.settings.SettingsActivity
 import kotlinx.coroutines.launch
 
@@ -36,7 +38,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            viewModel.toggleSession()
+            viewModel.ensureSessionStarted()
         } else {
             Toast.makeText(
                 this,
@@ -55,6 +57,14 @@ class MainActivity : AppCompatActivity() {
         setupGestureDetector()
         setupListeners()
         observeViewModel()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            viewModel.ensureSessionStarted()
+        } else {
+            requestAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     private fun setupGestureDetector() {
@@ -120,20 +130,24 @@ class MainActivity : AppCompatActivity() {
             viewModel.toggleMicMute()
         }
 
-        binding.tvViewHistory.setOnClickListener {
-            showChatHistory()
-        }
-
         binding.boxJarvisTitle.setOnClickListener {
             showChatHistory()
         }
     }
 
     private fun showChatHistory() {
-        ChatHistoryBottomSheet.newInstance().show(
-            supportFragmentManager,
-            ChatHistoryBottomSheet.TAG
-        )
+        if (!binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
+            if (supportFragmentManager.findFragmentByTag(ChatHistoryBottomSheet.TAG) == null) {
+                supportFragmentManager.beginTransaction()
+                    .replace(
+                        R.id.drawerHistoryContainer,
+                        ChatHistoryBottomSheet.newInstance(),
+                        ChatHistoryBottomSheet.TAG
+                    )
+                    .commit()
+            }
+            binding.drawerLayout.openDrawer(GravityCompat.START)
+        }
     }
 
     private fun observeViewModel() {
@@ -178,6 +192,12 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.isSessionOn.collect { isOn ->
                         updatePowerButtonUi(isOn)
+                        if (isOn) {
+                            val serviceIntent = Intent(this@MainActivity, JarvisVoiceForegroundService::class.java)
+                            ContextCompat.startForegroundService(this@MainActivity, serviceIntent)
+                        } else {
+                            stopService(Intent(this@MainActivity, JarvisVoiceForegroundService::class.java))
+                        }
                     }
                 }
 

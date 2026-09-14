@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.jarvis.assistant.data.model.*
+import com.jarvis.assistant.util.JarvisToolRegistry
 import kotlinx.coroutines.*
 import okhttp3.*
 import okio.ByteString
@@ -23,6 +24,7 @@ class GeminiLiveWebSocket(
         fun onAudioDataReceived(pcmData: ByteArray)
         fun onFirstAudioByteReceived()
         fun onUserTextReceived(text: String)
+        fun onToolCall(callId: String, name: String, arguments: Map<String, Any?>)
         fun onAssistantTextReceived(textChunk: String)
         fun onEmotionDetected(emotion: String, confidence: Double?)
         fun onInterrupted()
@@ -135,6 +137,7 @@ class GeminiLiveWebSocket(
     private fun sendSetupMessage(ws: WebSocket) {
         val setupPayload = mapOf(
             "model" to model,
+            "tools" to listOf(mapOf("functionDeclarations" to JarvisToolRegistry.declarations)),
             "generationConfig" to mapOf(
                 "responseModalities" to listOf("AUDIO"),
                 "speechConfig" to mapOf(
@@ -160,6 +163,27 @@ class GeminiLiveWebSocket(
     private fun handleIncomingMessage(jsonText: String) {
         try {
             val root = JsonParser.parseString(jsonText).asJsonObject
+
+            val toolCall = root.getAsJsonObject("toolCall")
+                ?: root.getAsJsonObject("tool_call")
+            if (toolCall != null) {
+                val functionCalls = toolCall.getAsJsonArray("functionCalls")
+                    ?: toolCall.getAsJsonArray("function_calls")
+                functionCalls?.forEach { element ->
+                    val call = element.asJsonObject
+                    val arguments = call.getAsJsonObject("args")
+                        ?: call.getAsJsonObject("arguments")
+                    val argumentMap = arguments?.entrySet()?.associate { entry ->
+                        entry.key to gson.fromJson<Any?>(entry.value, Any::class.java)
+                    }.orEmpty()
+                    listener.onToolCall(
+                        callId = call.get("id")?.asString.orEmpty(),
+                        name = call.get("name")?.asString.orEmpty(),
+                        arguments = argumentMap
+                    )
+                }
+                return
+            }
 
             val serverContent = when {
                 root.has("serverContent") -> root.getAsJsonObject("serverContent")
@@ -302,6 +326,25 @@ class GeminiLiveWebSocket(
         } catch (e: Exception) {
             Log.e(TAG, "Error sending text content: ${e.message}")
         }
+    }
+
+    fun sendToolResponse(callId: String, name: String, success: Boolean, message: String) {
+        if (!isConnected.get()) return
+        val response = mapOf(
+            "toolResponse" to mapOf(
+                "functionResponses" to listOf(
+                    mapOf(
+                        "id" to callId,
+                        "name" to name,
+                        "response" to mapOf(
+                            "success" to success,
+                            "message" to message
+                        )
+                    )
+                )
+            )
+        )
+        webSocket?.send(gson.toJson(response))
     }
 
     private fun startSessionRenewal() {

@@ -5,13 +5,13 @@ import android.util.Log
 class VoiceActivityDetector {
     companion object {
         private const val TAG = "VAD"
-        private const val CALIBRATION_CHUNKS = 25
-        private const val MIN_SPEECH_DURATION_MS = 500L // Increased for stability
-        private const val SILENCE_TIMEOUT_MS = 1200L // Increased for natural pauses
-        private const val MIN_NOISE_FLOOR = 0.08f // Prevents hypersensitivity in quiet rooms
+        private const val CALIBRATION_CHUNKS = 20
+        private const val MIN_SPEECH_DURATION_MS = 1L // Super snappy initiation
+        private const val SILENCE_TIMEOUT_MS = 200L // 200ms for ultra chot-pot response rate
+        private const val INITIAL_NOISE_FLOOR = 0.15f
     }
 
-    private var noiseFloor = MIN_NOISE_FLOOR
+    private var noiseFloor = INITIAL_NOISE_FLOOR
     private var calibrationCounter = 0
     private val noiseHistory = mutableListOf<Float>()
 
@@ -20,13 +20,14 @@ class VoiceActivityDetector {
     private var lastSpeechDetectedTime = 0L
 
     fun processChunk(amplitude: Float): VadResult {
-        // 1. Noise Floor Calibration (First few seconds)
+        // 1. Dynamic Noise Floor Calibration (Adapts to current environment background)
         if (calibrationCounter < CALIBRATION_CHUNKS) {
             noiseHistory.add(amplitude)
             calibrationCounter++
             if (calibrationCounter == CALIBRATION_CHUNKS) {
-                noiseFloor = noiseHistory.average().toFloat() * 1.5f // Buffer above noise
-                Log.d(TAG, "[VAD] Calibrated Noise Floor: $noiseFloor")
+                val avg = noiseHistory.average().toFloat()
+                noiseFloor = maxOf(avg * 1.3f, INITIAL_NOISE_FLOOR)
+                Log.d(TAG, "[VAD] Dynamic Noise Floor Calibrated: $noiseFloor")
             }
             return VadResult.CALIBRATING
         }
@@ -40,12 +41,14 @@ class VoiceActivityDetector {
                 isUserSpeaking = true
                 speechStartTime = currentTime
             }
+            // Slowly track noise floor upward if background noise grows slightly
+            noiseFloor = (noiseFloor * 0.995f) + (amplitude * 0.005f)
             return VadResult.SPEECH_CONTINUING
         } else {
-            // Slowly update noise floor during silence
+            // Adapt noise floor downwards during pure silence chunks
             if (!isUserSpeaking) {
-                noiseFloor = (noiseFloor * 0.99f) + (amplitude * 0.01f)
-                noiseFloor = noiseFloor.coerceAtLeast(MIN_NOISE_FLOOR)
+                noiseFloor = (noiseFloor * 0.98f) + (amplitude * 0.02f)
+                noiseFloor = maxOf(noiseFloor, INITIAL_NOISE_FLOOR)
             }
 
             if (isUserSpeaking) {
