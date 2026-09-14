@@ -91,6 +91,9 @@ object AssistantToolExecutor {
                 "get_current_app", "get_screen_context" -> withContext(Dispatchers.Main) {
                     screenContextResult()
                 }
+                "wait_for_element" -> withContext(Dispatchers.Main) {
+                    actionResult(phoneTasks.waitForElement(arguments.string("text")))
+                }
                 "click_text" -> withContext(Dispatchers.Main) {
                     clickTextResult(arguments.string("text"))
                 }
@@ -335,7 +338,7 @@ object AssistantToolExecutor {
             ?: return failure("Accessibility permission enabled নয় বা screen context পাওয়া যায়নি।")
         val text = screen.nodes.joinToString(" | ") { node ->
             listOfNotNull(node.text, node.description).joinToString("/") +
-                "[click=${node.clickable},edit=${node.editable},scroll=${node.scrollable},bounds=${node.bounds.flattenToString()}]"
+                "[role=${node.role},class=${node.className},click=${node.clickable},edit=${node.editable},scroll=${node.scrollable},enabled=${node.enabled},selected=${node.selected},checked=${node.checked},focused=${node.focused},bounds=${node.bounds.flattenToString()}]"
         }.take(7000)
         return success("Foreground package: ${screen.packageName}\n$text")
     }

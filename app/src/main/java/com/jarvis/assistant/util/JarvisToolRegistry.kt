@@ -8,6 +8,9 @@ object JarvisToolRegistry {
         declaration("list_apps", "List launchable installed applications", emptyMap(), emptyList()),
         declaration("get_current_app", "Get the foreground application and compact visible UI context", emptyMap(), emptyList()),
         declaration("get_screen_context", "Inspect visible accessibility UI nodes", emptyMap(), emptyList()),
+        declaration("wait_for_element", "Wait for visible text or content description", mapOf(
+            "text" to property("string", "Visible target text"),
+        ), listOf("text")),
         declaration("click_text", "Click a visible text or content description", mapOf(
             "text" to property("string", "Visible target text")
         ), listOf("text")),

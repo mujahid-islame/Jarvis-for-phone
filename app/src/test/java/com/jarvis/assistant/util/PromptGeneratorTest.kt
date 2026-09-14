@@ -37,8 +37,24 @@ class PromptGeneratorTest {
 
         assertTrue(names.contains("open_app"))
         assertTrue(names.contains("get_screen_context"))
+        assertTrue(names.contains("wait_for_element"))
         assertTrue(names.contains("youtube_search"))
         assertTrue(names.contains("open_settings"))
+    }
+
+    @Test
+    fun `action result defaults to unverified failure safely`() {
+        val result = ActionResult(
+            success = false,
+            action = "click_text",
+            message = "not found",
+            verification = VerificationStatus.FAILED,
+            retryable = true
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.shouldReobserve)
+        assertTrue(result.confidence == 0.0)
     }
 
     @Test

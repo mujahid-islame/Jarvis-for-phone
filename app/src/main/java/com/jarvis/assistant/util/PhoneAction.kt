@@ -38,5 +38,7 @@ data class ActionResult(
     val action: String,
     val message: String,
     val verification: VerificationStatus,
-    val retryable: Boolean = false
+    val retryable: Boolean = false,
+    val confidence: Double = if (verification == VerificationStatus.VERIFIED) 1.0 else 0.0,
+    val shouldReobserve: Boolean = !success
 )

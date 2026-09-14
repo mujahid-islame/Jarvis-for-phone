@@ -2,12 +2,73 @@ package com.jarvis.assistant.util
 
 import com.jarvis.assistant.accessibility.JarvisAccessibilityService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class PhoneTaskOrchestrator(
-    private val maxRetries: Int = 2
+    private val maxRetries: Int = 2,
+    private val maxSteps: Int = 15,
+    private val taskTimeoutMs: Long = 30_000L
 ) {
+    private val taskMutex = Mutex()
+
+    @Volatile
+    private var currentState: PhoneTaskState = PhoneTaskState.IDLE
+
+    fun state(): PhoneTaskState = currentState
+
+    suspend fun executeTask(
+        actions: List<PhoneAction>,
+        onStateChanged: (PhoneTaskState) -> Unit = {}
+    ): TaskResult {
+        if (actions.isEmpty()) {
+            return TaskResult(false, 0, 0, "কোনো phone action plan পাওয়া যায়নি।", FailureReason.UNKNOWN_ERROR)
+        }
+        return try {
+            taskMutex.withLock {
+                val boundedActions = actions.take(maxSteps.coerceAtLeast(1))
+                val result = withTimeoutOrNull(taskTimeoutMs.coerceAtLeast(1L)) {
+                    transition(PhoneTaskState.OBSERVING, onStateChanged)
+                    var completed = 0
+                    for (action in boundedActions) {
+                        transition(PhoneTaskState.EXECUTING, onStateChanged)
+                        val actionResult = execute(action)
+                        transition(PhoneTaskState.VERIFYING, onStateChanged)
+                        if (!actionResult.success) {
+                            transition(PhoneTaskState.RECOVERING, onStateChanged)
+                            return@withTimeoutOrNull TaskResult(
+                                success = false,
+                                completedSteps = completed,
+                                totalSteps = boundedActions.size,
+                                message = actionResult.message,
+                                failureReason = if (actionResult.retryable) FailureReason.VERIFICATION_FAILED else FailureReason.ACTION_FAILED,
+                                state = PhoneTaskState.FAILED
+                            )
+                        }
+                        completed++
+                    }
+                    transition(PhoneTaskState.COMPLETED, onStateChanged)
+                    TaskResult(true, completed, boundedActions.size, "Phone task সম্পন্ন হয়েছে।")
+                }
+                result ?: TaskResult(
+                    success = false,
+                    completedSteps = 0,
+                    totalSteps = boundedActions.size,
+                    message = "Phone task-এর সময়সীমা শেষ হয়েছে।",
+                    failureReason = FailureReason.TIMEOUT,
+                    state = PhoneTaskState.FAILED
+                ).also { transition(PhoneTaskState.FAILED, onStateChanged) }
+            }
+        } catch (cancelled: CancellationException) {
+            transition(PhoneTaskState.CANCELLED, onStateChanged)
+            throw cancelled
+        }
+    }
+
     suspend fun execute(action: PhoneAction): ActionResult = withContext(Dispatchers.Main) {
         if (!JarvisAccessibilityService.isEnabled()) {
             return@withContext ActionResult(
@@ -26,6 +87,32 @@ class PhoneTaskOrchestrator(
             if (!lastResult.success && lastResult.retryable) delay(120L)
         }
         lastResult
+    }
+
+    suspend fun waitForElement(target: String, timeoutMs: Long = 5_000L): ActionResult =
+        withContext(Dispatchers.Main) {
+            if (!JarvisAccessibilityService.isEnabled()) {
+                return@withContext failure("wait_for_element", "Accessibility permission enabled নয়।", false)
+            }
+            val deadline = System.currentTimeMillis() + timeoutMs.coerceIn(250L, 10_000L)
+            while (System.currentTimeMillis() < deadline) {
+                val screen = JarvisAccessibilityService.getScreenContext()
+                val found = screen?.nodes?.any {
+                    it.text?.contains(target, ignoreCase = true) == true ||
+                        it.description?.contains(target, ignoreCase = true) == true
+                } == true
+                if (found) return@withContext verified("wait_for_element", "$target screen-এ পাওয়া গেছে।")
+                delay(120L)
+            }
+            failure("wait_for_element", "$target নির্দিষ্ট সময়ের মধ্যে পাওয়া যায়নি।", true)
+        }
+
+    private fun transition(
+        next: PhoneTaskState,
+        onStateChanged: (PhoneTaskState) -> Unit
+    ) {
+        currentState = next
+        onStateChanged(next)
     }
 
     private suspend fun executeOnce(action: PhoneAction): ActionResult {
