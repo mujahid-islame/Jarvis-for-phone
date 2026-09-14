@@ -48,8 +48,9 @@ object AssistantCommandParser {
             matchesPhrase(lower, WEATHER_PHRASES) -> command(AssistantCommandType.WEATHER, normalized)
             matchesPhrase(lower, NEWS_PHRASES) -> command(AssistantCommandType.NEWS, normalized)
             matchesPhrase(lower, DEVICE_PHRASES) -> command(AssistantCommandType.DEVICE_CONTROL, normalized)
-            matchesPhrase(lower, NOTE_PHRASES) -> command(AssistantCommandType.NOTE, normalized)
             matchesPhrase(lower, REMINDER_PHRASES) -> command(AssistantCommandType.REMINDER, normalized)
+            matchesPhrase(lower, MEMORY_PHRASES) -> command(AssistantCommandType.NOTE, normalized)
+            matchesPhrase(lower, NOTE_PHRASES) -> command(AssistantCommandType.NOTE, normalized)
             matchesPhrase(lower, TIMER_PHRASES) -> command(AssistantCommandType.TIMER, normalized)
             matchesPhrase(lower, ALARM_PHRASES) -> command(AssistantCommandType.ALARM, normalized)
             isGenericAppCommand(lower) -> command(AssistantCommandType.APP_AUTOMATION, normalized)
@@ -116,6 +117,11 @@ object AssistantCommandParser {
     private val WEATHER_PHRASES = listOf("weather", "forecast", "আবহাওয়া", "আবহাওয়া", "বৃষ্টি হবে কি")
     private val NEWS_PHRASES = listOf("latest news", "headlines", "news", "খবর", "সর্বশেষ খবর")
     private val DEVICE_PHRASES = listOf("wifi settings", "wi-fi settings", "bluetooth settings", "volume up", "volume down", "brightness", "screen brightness", "increase brightness", "decrease brightness", "battery status", "battery percentage", "current app", "phone status", "device status", "what's my battery", "how much battery", "open settings", "open the settings", "settings open", "setting", "settings", "display settings", "sound settings", "battery settings", "app settings", "notification settings", "ওয়াইফাই সেটিংস", "ব্লুটুথ সেটিংস", "সেটিংস", "সেটিং খোলো", "ডিসপ্লে সেটিংস", "সাউন্ড সেটিংস", "ভলিউম বাড়াও", "ভলিউম কমাও", "ব্রাইটনেস", "উজ্জ্বলতা বাড়াও", "উজ্জ্বলতা কমাও", "ব্যাটারি কত", "ব্যাটারি স্ট্যাটাস", "আমার ব্যাটারি", "কোন app-এ আছি", "বর্তমান অ্যাপ", "ফোন স্ট্যাটাস", "ডিভাইস স্ট্যাটাস")
+    private val MEMORY_PHRASES = listOf(
+        "add memory", "memory add", "save memory", "memory vault", "remember this", "save to memory",
+        "মেমরি আপডেট", "মেমরি রাখো", "মেমরি যোগ করো", "মেমরি ভোল্ট", "মেমরি",
+        "আমাকে মনে রাখো", "মনে রাখো এইটা"
+    )
     private val NOTE_PHRASES = listOf("write note", "save note", "note that", "নোট রাখো", "নোট", "মনে রাখার নোট")
     private val REMINDER_PHRASES = listOf("set reminder", "reminder", "remember", "মনে রাখো", "মনে রাখবেন", "রিমাইন্ডার", "কাজ মনে রাখো", "meeting reminder", "ট্র্যাক রাখো")
     private val TIMER_PHRASES = listOf("timer", "countdown", "টাইমার", "কাউন্টডাউন", "minute timer", "seconds timer", "টায়মার")

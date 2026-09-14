@@ -51,11 +51,13 @@ object PhonePlannerContract {
         "home",
         "recents",
         "notifications",
-        "quick_settings"
-        ,"youtube_search",
+        "quick_settings",
+        "youtube_search",
         "web_search",
-        "open_settings"
-        ,"set_brightness"
+        "open_browser_search",
+        "search_in_app",
+        "open_settings",
+        "set_brightness"
     )
 
     private val requiredArguments = mapOf(
@@ -64,8 +66,10 @@ object PhonePlannerContract {
         "click_description" to setOf("description"),
         "type_text" to setOf("text"),
         "scroll" to setOf("direction"),
-        "wait_for_element" to setOf("text")
-        ,"set_brightness" to setOf("percent")
+        "wait_for_element" to setOf("text"),
+        "open_browser_search" to setOf("query"),
+        "search_in_app" to setOf("query"),
+        "set_brightness" to setOf("percent")
     )
 
     fun validateFunctionCall(

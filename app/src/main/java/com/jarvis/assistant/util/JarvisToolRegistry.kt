@@ -43,6 +43,12 @@ object JarvisToolRegistry {
         declaration("web_search", "Search the web for a query", mapOf(
             "query" to property("string", "Search query")
         ), listOf("query")),
+        declaration("open_browser_search", "Open the browser with a search query for a target term", mapOf(
+            "query" to property("string", "Search query")
+        ), listOf("query")),
+        declaration("search_in_app", "Type a query into the current search field when one is visible", mapOf(
+            "query" to property("string", "Search query")
+        ), listOf("query")),
         declaration("open_settings", "Open an Android Settings page", mapOf(
             "page" to property("string", "settings, wifi, bluetooth, display, sound, battery, notifications")
         ), listOf("page")),

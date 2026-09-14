@@ -123,6 +123,12 @@ object AssistantToolExecutor {
                     youtubeSearch(context, arguments.string("query"))
                 }
                 "web_search" -> ioResult { webSearch(arguments.string("query")) }
+                "open_browser_search" -> withContext(Dispatchers.Main) {
+                    openBrowserSearch(context, arguments.string("query"))
+                }
+                "search_in_app" -> withContext(Dispatchers.Main) {
+                    searchInCurrentApp(context, arguments.string("query"))
+                }
                 "open_settings" -> withContext(Dispatchers.Main) {
                     openSettingsPage(context, arguments.string("page"))
                 }
@@ -195,6 +201,35 @@ object AssistantToolExecutor {
         }
         context.startActivity(intent)
         return success("YouTube-এ $query search খুলে দিয়েছি।")
+    }
+
+    private fun openBrowserSearch(context: Context, query: String): AssistantToolResult {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return failure("Search query খালি।")
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(trimmed)}")).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (browserIntent.resolveActivity(context.packageManager) == null) {
+            return failure("Browser পাওয়া যায়নি।")
+        }
+        context.startActivity(browserIntent)
+        return success("Browser-এ ${trimmed} সার্চ খুলে দিয়েছি।")
+    }
+
+    private fun searchInCurrentApp(context: Context, query: String): AssistantToolResult {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return failure("Search query খালি।")
+        val screen = JarvisAccessibilityService.getScreenContext() ?: return failure("Search field বা current app context পাওয়া যায়নি।")
+        val searchNode = screen.nodes.firstOrNull { node ->
+            (node.editable || node.role == com.jarvis.assistant.accessibility.SemanticRole.SEARCH_FIELD) &&
+                (node.text?.contains("search", ignoreCase = true) == true ||
+                 node.description?.contains("search", ignoreCase = true) == true ||
+                 node.className?.contains("EditText", ignoreCase = true) == true)
+        }
+        if (searchNode == null) return failure("এই page-এ search field পাওয়া যায়নি।")
+        val typed = JarvisAccessibilityService.typeText(trimmed, true)
+        if (!typed) return failure("Search query type করতে পারিনি।")
+        return success("Current app-এ $trimmed search query type করেছি।")
     }
 
     private fun weather(rawText: String): String {
@@ -407,7 +442,38 @@ object AssistantToolExecutor {
         val intent = launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (intent.resolveActivity(context.packageManager) == null) return failure("$appName appটি চালু করা যায়নি।")
         context.startActivity(intent)
-        return success("$appName app খুলে দিয়েছি।")
+
+        val packageMatch = knownPackages.firstOrNull() ?: findPackageNameByLabel(context, appName)
+        val verified = verifyForegroundApp(context, packageMatch, appName)
+        return if (verified) success("$appName app খুলে দিয়েছি।")
+        else failure("$appName appটি চালু করা হয়েছে, কিন্তু foreground verification পাওয়া যায়নি।")
+    }
+
+    private fun verifyForegroundApp(context: Context, expectedPackage: String?, requestedName: String): Boolean {
+        if (expectedPackage.isNullOrBlank() && requestedName.isBlank()) return false
+        var lastPackage: String? = null
+        for (attempt in 0..8) {
+            val screen = JarvisAccessibilityService.getScreenContext()
+            val currentPackage = screen?.packageName?.lowercase(Locale.getDefault())
+            lastPackage = currentPackage
+            if (currentPackage != null) {
+                val expected = expectedPackage?.lowercase(Locale.getDefault())
+                if (expected != null && currentPackage.contains(expected)) return true
+                if (requestedName.isNotBlank() && currentPackage.contains(requestedName.lowercase(Locale.getDefault()).replace(" ", ""))) return true
+            }
+            if (attempt < 8) Thread.sleep(180L)
+        }
+        return false
+    }
+
+    private fun findPackageNameByLabel(context: Context, appName: String): String? {
+        if (appName.isBlank()) return null
+        val normalized = appName.lowercase(Locale.getDefault())
+        return context.packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            .asSequence()
+            .map { info -> context.packageManager.getApplicationLabel(info).toString() to info.packageName }
+            .firstOrNull { (label, _) -> label.lowercase(Locale.getDefault()).contains(normalized) }
+            ?.second
     }
 
     private fun openAppByName(context: Context, appName: String): AssistantToolResult =

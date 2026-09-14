@@ -660,9 +660,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             AssistantCommandType.NOTE -> {
-                val noteText = text.replace(Regex("(?i)(note|নোট|নোট রাখো|write note|save note)"), "").trim()
+                val noteText = text.replace(Regex("(?i)(note|নোট|নোট রাখো|write note|save note|memory|মেমরি|মেমরি রাখো|remember this|মনে রাখো)"), "").trim()
                 if (noteText.isNotBlank()) {
                     assistantMemoryRepository.addNote("নোট", noteText)
+                    JarvisApp.instance.memoryVaultRepository.rememberFact("memory_note", noteText)
                 }
             }
             AssistantCommandType.TIMER -> {
@@ -692,7 +693,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             type == AssistantCommandType.WEATHER ||
             type == AssistantCommandType.NEWS ||
             type == AssistantCommandType.DEVICE_CONTROL ||
-            type == AssistantCommandType.APP_AUTOMATION
+            type == AssistantCommandType.APP_AUTOMATION ||
+            type == AssistantCommandType.NOTE
     }
 
     private fun isActionCommand(type: AssistantCommandType): Boolean {
