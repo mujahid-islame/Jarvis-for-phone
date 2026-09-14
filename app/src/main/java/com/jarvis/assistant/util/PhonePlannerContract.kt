@@ -55,6 +55,7 @@ object PhonePlannerContract {
         ,"youtube_search",
         "web_search",
         "open_settings"
+        ,"set_brightness"
     )
 
     private val requiredArguments = mapOf(
@@ -64,6 +65,7 @@ object PhonePlannerContract {
         "type_text" to setOf("text"),
         "scroll" to setOf("direction"),
         "wait_for_element" to setOf("text")
+        ,"set_brightness" to setOf("percent")
     )
 
     fun validateFunctionCall(
@@ -87,6 +89,11 @@ object PhonePlannerContract {
         }
         if (name == "type_text" && arguments["text"].asNonBlankString().isNullOrBlank()) {
             return invalid("Type করার text খালি হতে পারে না।")
+        }
+        if (name == "set_brightness") {
+            val percent = arguments["percent"].asDoubleOrNull()
+                ?: return invalid("Brightness percent অবৈধ।")
+            if (percent !in 0.0..100.0) return invalid("Brightness 0 থেকে 100 percent-এর মধ্যে হতে হবে।")
         }
         return PlannerValidation(true, "Valid planner action", PlannerDecision(
             status = PlannerStatus.CONTINUE,
@@ -128,6 +135,11 @@ object PhonePlannerContract {
     private fun invalid(message: String) = PlannerValidation(false, message)
 
     private fun Any?.asNonBlankString(): String? = this?.toString()?.trim()?.takeIf { it.isNotBlank() }
+
+    private fun Any?.asDoubleOrNull(): Double? = when (this) {
+        is Number -> toDouble()
+        else -> this?.toString()?.toDoubleOrNull()
+    }
 
     private fun JsonObject.toAnyMap(): Map<String, Any?> = entrySet().associate { entry ->
         entry.key to Gson().fromJson<Any?>(entry.value, Any::class.java)

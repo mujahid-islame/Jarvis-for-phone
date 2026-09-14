@@ -34,7 +34,10 @@ object JarvisToolRegistry {
         ), listOf("query")),
         declaration("open_settings", "Open an Android Settings page", mapOf(
             "page" to property("string", "settings, wifi, bluetooth, display, sound, battery, notifications")
-        ), listOf("page"))
+        ), listOf("page")),
+        declaration("set_brightness", "Set screen brightness percentage when Android write-settings access is granted", mapOf(
+            "percent" to property("number", "Brightness from 0 to 100")
+        ), listOf("percent"))
     )
 
     private fun property(type: String, description: String): Map<String, String> = mapOf(

@@ -18,6 +18,7 @@ import okhttp3.Request
 import java.net.URLDecoder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 data class AssistantToolResult(
     val success: Boolean,
@@ -124,6 +125,11 @@ object AssistantToolExecutor {
                 "web_search" -> ioResult { webSearch(arguments.string("query")) }
                 "open_settings" -> withContext(Dispatchers.Main) {
                     openSettingsPage(context, arguments.string("page"))
+                }
+                "set_brightness" -> withContext(Dispatchers.Main) {
+                    val percent = arguments.double("percent")
+                        ?: return@withContext failure("Brightness percent পাওয়া যায়নি।")
+                    setBrightness(context, percent)
                 }
                 else -> failure("Unknown tool: $name")
             }
@@ -271,6 +277,16 @@ object AssistantToolExecutor {
 
     private fun deviceControl(context: Context, rawText: String): AssistantToolResult {
         val lower = rawText.lowercase(Locale.getDefault())
+        if (lower.containsAny("brightness", "screen brightness", "ব্রাইটনেস", "উজ্জ্বলতা")) {
+            val requested = extractBrightnessPercent(rawText)
+            val current = readBrightnessPercent(context)
+            val target = requested ?: when {
+                lower.containsAny("increase", "বাড়াও", "বাড়াও") -> (current + 10).coerceAtMost(100)
+                lower.containsAny("decrease", "কমাও") -> (current - 10).coerceAtLeast(0)
+                else -> return openBrightnessPermission(context)
+            }
+            return setBrightness(context, target.toDouble())
+        }
         if (lower.containsAny("volume up", "ভলিউম বাড়াও")) {
             val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
                 ?: return failure("Audio service পাওয়া যায়নি।")
@@ -300,6 +316,65 @@ object AssistantToolExecutor {
 
     private fun openSettingsPage(context: Context, page: String): AssistantToolResult =
         deviceControl(context, "$page settings")
+
+    private fun setBrightness(context: Context, percent: Double): AssistantToolResult {
+        val targetPercent = percent.coerceIn(0.0, 100.0)
+        if (!Settings.System.canWrite(context)) return openBrightnessPermission(context)
+        return try {
+            val targetValue = ((targetPercent / 100.0) * 255.0).roundToInt().coerceIn(0, 255)
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS,
+                targetValue
+            )
+            val actualValue = Settings.System.getInt(
+                context.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS,
+                -1
+            )
+            val actualPercent = ((actualValue / 255.0) * 100.0).roundToInt()
+            if (kotlin.math.abs(actualPercent - targetPercent) <= 1.0) {
+                success("Brightness ${actualPercent}% করা হয়েছে।")
+            } else {
+                failure("Brightness পরিবর্তন verify করা যায়নি।")
+            }
+        } catch (error: SecurityException) {
+            failure("Brightness change করার permission দেওয়া নেই।")
+        }
+    }
+
+    private fun openBrightnessPermission(context: Context): AssistantToolResult {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_WRITE_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent.resolveActivity(context.packageManager) == null) {
+            return failure("Brightness control-এর system permission page পাওয়া যায়নি।")
+        }
+        context.startActivity(intent)
+        return failure("Brightness control চালাতে এই Settings page-এ JARVIS-এর write settings access enable করুন।")
+    }
+
+    private fun readBrightnessPercent(context: Context): Int {
+        val value = Settings.System.getInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS,
+            128
+        )
+        return ((value / 255.0) * 100.0).roundToInt().coerceIn(0, 100)
+    }
+
+    private fun extractBrightnessPercent(rawText: String): Int? {
+        val normalized = rawText.map { character ->
+            when (character) {
+                '০' -> '0'; '১' -> '1'; '২' -> '2'; '৩' -> '3'; '৪' -> '4'
+                '৫' -> '5'; '৬' -> '6'; '৭' -> '7'; '৮' -> '8'; '৯' -> '9'
+                else -> character
+            }
+        }.joinToString("")
+        return Regex("(?<!\\d)(\\d{1,3})\\s*(?:%|percent|শতাংশ)?", RegexOption.IGNORE_CASE)
+            .find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 100)
+    }
 
     private fun openApp(context: Context, rawText: String): AssistantToolResult {
         val lower = rawText.lowercase(Locale.getDefault())
@@ -405,4 +480,8 @@ object AssistantToolExecutor {
 
     private fun Map<String, Any?>.string(key: String): String = this[key]?.toString()?.trim().orEmpty()
     private fun Map<String, Any?>.boolean(key: String): Boolean = this[key] as? Boolean ?: false
+    private fun Map<String, Any?>.double(key: String): Double? = when (val value = this[key]) {
+        is Number -> value.toDouble()
+        else -> value?.toString()?.toDoubleOrNull()
+    }
 }

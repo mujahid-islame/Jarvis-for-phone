@@ -50,6 +50,23 @@ class PhonePlannerContractTest {
     }
 
     @Test
+    fun `validates brightness range`() {
+        val valid = PhonePlannerContract.validateFunctionCall(
+            "set_brightness",
+            mapOf("percent" to 50),
+            confidence = 0.95
+        )
+        val invalid = PhonePlannerContract.validateFunctionCall(
+            "set_brightness",
+            mapOf("percent" to 120),
+            confidence = 0.95
+        )
+
+        assertTrue(valid.valid)
+        assertFalse(invalid.valid)
+    }
+
+    @Test
     fun `rejects malformed planner decision`() {
         val result = PhonePlannerContract.parseDecision("not-json")
 

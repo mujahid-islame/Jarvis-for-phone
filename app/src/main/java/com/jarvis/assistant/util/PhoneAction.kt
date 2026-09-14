@@ -19,6 +19,7 @@ sealed class PhoneAction {
     data object Recents : PhoneAction()
     data object Notifications : PhoneAction()
     data object QuickSettings : PhoneAction()
+    data class SetBrightness(val percent: Int) : PhoneAction()
     data class Wait(val milliseconds: Long) : PhoneAction()
 
     enum class Direction {

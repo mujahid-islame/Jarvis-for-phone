@@ -165,4 +165,12 @@ class AssistantCommandParserTest {
         assertNotNull(command)
         assertEquals(AssistantCommandType.DEVICE_CONTROL, command?.type)
     }
+
+    @Test
+    fun `parses brightness command`() {
+        val command = AssistantCommandParser.parse("brightness 50 percent করো")
+
+        assertNotNull(command)
+        assertEquals(AssistantCommandType.DEVICE_CONTROL, command?.type)
+    }
 }

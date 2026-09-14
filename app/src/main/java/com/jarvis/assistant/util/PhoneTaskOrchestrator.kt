@@ -171,6 +171,11 @@ class PhoneTaskOrchestrator(
                 PhoneAction.Recents -> global(action.name(), JarvisAccessibilityService.recents())
                 PhoneAction.Notifications -> global(action.name(), JarvisAccessibilityService.notifications())
                 PhoneAction.QuickSettings -> global(action.name(), JarvisAccessibilityService.quickSettings())
+                is PhoneAction.SetBrightness -> failure(
+                    action.name(),
+                    "Brightness action-এর জন্য system Context executor প্রয়োজন।",
+                    retryable = false
+                )
             is PhoneAction.Wait -> {
                 delay(action.milliseconds.coerceIn(0L, 5000L))
                     ActionResult(true, action.name(), "Wait সম্পন্ন হয়েছে।", VerificationStatus.VERIFIED)
@@ -233,6 +238,7 @@ class PhoneTaskOrchestrator(
         PhoneAction.Recents -> "recents"
         PhoneAction.Notifications -> "notifications"
         PhoneAction.QuickSettings -> "quick_settings"
+        is PhoneAction.SetBrightness -> "set_brightness"
         is PhoneAction.Wait -> "wait"
     }
 }

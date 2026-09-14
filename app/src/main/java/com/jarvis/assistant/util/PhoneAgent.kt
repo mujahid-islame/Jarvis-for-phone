@@ -172,7 +172,7 @@ class PhoneAgent(
 
     private suspend fun executeDecision(decision: PlannerDecision): ActionResult {
         val name = decision.action ?: return ActionResult(false, "planner", "Action missing।", VerificationStatus.FAILED)
-        if (name in setOf("open_app", "list_apps", "youtube_search", "web_search", "open_settings")) {
+        if (name in setOf("open_app", "list_apps", "youtube_search", "web_search", "open_settings", "set_brightness")) {
             val result = AssistantToolExecutor.executeFunction(context, name, decision.arguments)
             return ActionResult(
                 success = result.success,
