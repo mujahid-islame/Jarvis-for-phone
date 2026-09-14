@@ -19,6 +19,10 @@ class MemoryVaultRepository(private val preferences: AppPreferences) {
         preferences.saveMemoryVault(updated)
     }
 
+    fun rememberFact(key: String, value: String) {
+        upsert(key, value)
+    }
+
     fun readValue(key: String): String? = entries.value.firstOrNull { it.key == key.trim() }?.value
 
     fun snapshot(): Map<String, String> = entries.value.associate { it.key to it.value }

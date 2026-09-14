@@ -277,6 +277,19 @@ object AssistantToolExecutor {
 
     private fun deviceControl(context: Context, rawText: String): AssistantToolResult {
         val lower = rawText.lowercase(Locale.getDefault())
+        if (lower.containsAny("battery", "ব্যাটারি", "phone status", "device status", "ফোন স্ট্যাটাস", "ডিভাইস স্ট্যাটাস", "current app", "বর্তমান অ্যাপ", "which app")) {
+            val snapshot = DeviceContextSnapshotBuilder.build(context)
+            if (lower.containsAny("battery", "ব্যাটারি") && !lower.containsAny("settings", "সেটিংস")) {
+                val chargingText = if (snapshot.isCharging) "চাঁদা/চার্জ হচ্ছে" else "চার্জ হচ্ছে না"
+                return success("ব্যাটারি ${snapshot.batteryPercent}%। এখন ${chargingText}।")
+            }
+            if (lower.containsAny("current app", "বর্তমান অ্যাপ", "কোন app", "which app", "আমার এখন") && !lower.containsAny("settings", "সেটিংস")) {
+                return success("এখন আপনি ${snapshot.currentApp} অ্যাপ-এ আছেন।")
+            }
+            if (lower.containsAny("phone status", "device status", "ফোন স্ট্যাটাস", "ডিভাইস স্ট্যাটাস")) {
+                return success("ফোন স্ট্যাটাস: ব্যাটারি ${snapshot.batteryPercent}%, ${if (snapshot.isCharging) "চার্জ হচ্ছে" else "চার্জ হচ্ছে না"}, নেটওয়ার্ক ${snapshot.connectionType}, ব্রাইটনেস ${snapshot.brightnessPercent}%, ভলিউম ${snapshot.volumePercent}%, বর্তমান অ্যাপ ${snapshot.currentApp}।")
+            }
+        }
         if (lower.containsAny("brightness", "screen brightness", "ব্রাইটনেস", "উজ্জ্বলতা")) {
             val requested = extractBrightnessPercent(rawText)
             val current = readBrightnessPercent(context)
