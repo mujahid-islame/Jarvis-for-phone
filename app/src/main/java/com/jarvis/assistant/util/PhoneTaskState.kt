@@ -33,5 +33,7 @@ data class TaskResult(
     val totalSteps: Int,
     val message: String,
     val failureReason: FailureReason? = null,
-    val state: PhoneTaskState = if (success) PhoneTaskState.COMPLETED else PhoneTaskState.FAILED
+    val state: PhoneTaskState = if (success) PhoneTaskState.COMPLETED else PhoneTaskState.FAILED,
+    val plannerCalls: Int = 0,
+    val recoveryAttempts: Int = 0
 )
