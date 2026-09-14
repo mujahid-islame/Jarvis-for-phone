@@ -18,7 +18,9 @@ import com.jarvis.assistant.network.GeminiLiveWebSocket
 import com.jarvis.assistant.util.AssistantCommandParser
 import com.jarvis.assistant.util.AssistantCommandType
 import com.jarvis.assistant.util.AssistantToolExecutor
+import com.jarvis.assistant.util.AssistantToolResult
 import com.jarvis.assistant.util.DurationParser
+import com.jarvis.assistant.util.PhonePlannerContract
 import com.jarvis.assistant.util.PromptGenerator
 import com.jarvis.assistant.util.WakeWordDetector
 import kotlinx.coroutines.Dispatchers
@@ -299,11 +301,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 override fun onToolCall(callId: String, name: String, arguments: Map<String, Any?>) {
                     viewModelScope.launch {
-                        val result = AssistantToolExecutor.executeFunction(
-                            context = getApplication(),
-                            name = name,
-                            arguments = arguments
-                        )
+                        val validation = PhonePlannerContract.validateFunctionCall(name, arguments)
+                        val result = if (!validation.valid) {
+                            AssistantToolResult(
+                                success = false,
+                                message = "Planner action rejected: ${validation.message}"
+                            )
+                        } else {
+                            AssistantToolExecutor.executeFunction(
+                                context = getApplication(),
+                                name = name,
+                                arguments = arguments
+                            )
+                        }
                         liveWebSocket?.sendToolResponse(
                             callId = callId,
                             name = name,
