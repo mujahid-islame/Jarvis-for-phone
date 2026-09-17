@@ -21,7 +21,7 @@ object ActionVerifier {
         val root = AccessibilityBridge.getRootNode() ?: return false
         val snapshot = AccessibilityNodeFinder.captureSnapshot(root, 1080, 2400)
         // Basic fingerprint using element count and package
-        val newFingerprint = "${snapshot.packageName}_${snapshot.elements.size}"
+        val newFingerprint = "${snapshot.packageName}_${snapshot.nodes.size}"
         return newFingerprint != oldFingerprint
     }
 }

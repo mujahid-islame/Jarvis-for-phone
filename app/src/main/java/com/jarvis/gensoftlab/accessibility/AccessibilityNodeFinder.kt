@@ -45,18 +45,18 @@ object AccessibilityNodeFinder {
         return UiElement(
             text = node.text?.toString(),
             contentDescription = node.contentDescription?.toString(),
-            viewId = node.viewIdResourceName,
             className = node.className?.toString(),
             bounds = bounds,
             clickable = node.isClickable,
-            enabled = node.isEnabled,
-            focusable = node.isFocusable,
-            focused = node.isFocused,
             editable = node.isEditable,
+            scrollable = node.isScrollable,
+            focused = node.isFocused,
+            enabled = node.isEnabled,
             selected = node.isSelected,
             checked = node.isChecked,
-            scrollable = node.isScrollable,
-            packageName = node.packageName?.toString()
+            packageName = node.packageName?.toString(),
+            viewId = node.viewIdResourceName,
+            focusable = node.isFocusable
         )
     }
 
@@ -80,7 +80,7 @@ object AccessibilityNodeFinder {
             screenWidth = screenWidth,
             screenHeight = screenHeight,
             focusedElement = focusedElement,
-            elements = elements
+            nodes = elements
         )
     }
 }

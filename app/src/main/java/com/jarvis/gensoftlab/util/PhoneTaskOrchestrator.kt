@@ -1,0 +1,286 @@
+package com.jarvis.gensoftlab.util
+
+import com.jarvis.gensoftlab.accessibility.JarvisAccessibilityService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+class PhoneTaskOrchestrator(
+    private val maxRetries: Int = 2,
+    private val maxSteps: Int = 15,
+    private val taskTimeoutMs: Long = 30_000L
+) {
+    private val taskMutex = Mutex()
+
+    @Volatile
+    private var currentState: PhoneTaskState = PhoneTaskState.IDLE
+
+    fun state(): PhoneTaskState = currentState
+
+    suspend fun executeTask(
+        actions: List<PhoneAction>,
+        onStateChanged: (PhoneTaskState) -> Unit = {}
+    ): TaskResult {
+        if (actions.isEmpty()) {
+            return TaskResult(false, 0, 0, "কোনো phone action plan পাওয়া যায়নি।", FailureReason.UNKNOWN_ERROR)
+        }
+        return try {
+            taskMutex.withLock {
+                val boundedActions = actions.take(maxSteps.coerceAtLeast(1))
+                val result = withTimeoutOrNull(taskTimeoutMs.coerceAtLeast(1L)) {
+                    transition(PhoneTaskState.OBSERVING, onStateChanged)
+                    var completed = 0
+                    for (action in boundedActions) {
+                        transition(PhoneTaskState.EXECUTING, onStateChanged)
+                        val actionResult = execute(action)
+                        transition(PhoneTaskState.VERIFYING, onStateChanged)
+                        if (!actionResult.success) {
+                            transition(PhoneTaskState.RECOVERING, onStateChanged)
+                            return@withTimeoutOrNull TaskResult(
+                                success = false,
+                                completedSteps = completed,
+                                totalSteps = boundedActions.size,
+                                message = actionResult.message,
+                                failureReason = if (actionResult.retryable) FailureReason.VERIFICATION_FAILED else FailureReason.ACTION_FAILED,
+                                state = PhoneTaskState.FAILED
+                            )
+                        }
+                        completed++
+                    }
+                    transition(PhoneTaskState.COMPLETED, onStateChanged)
+                    TaskResult(true, completed, boundedActions.size, "Phone task সম্পন্ন হয়েছে।")
+                }
+                result ?: TaskResult(
+                    success = false,
+                    completedSteps = 0,
+                    totalSteps = boundedActions.size,
+                    message = "Phone task-এর সময়সীমা শেষ হয়েছে।",
+                    failureReason = FailureReason.TIMEOUT,
+                    state = PhoneTaskState.FAILED
+                ).also { transition(PhoneTaskState.FAILED, onStateChanged) }
+            }
+        } catch (cancelled: CancellationException) {
+            transition(PhoneTaskState.CANCELLED, onStateChanged)
+            throw cancelled
+        }
+    }
+
+    suspend fun execute(action: PhoneAction): ActionResult = withContext(Dispatchers.Main) {
+        if (!JarvisAccessibilityService.isEnabled()) {
+            return@withContext ActionResult(
+                    success = false,
+                    action = action.name(),
+                message = "Phone Control Accessibility permission enabled নয়।",
+                verification = VerificationStatus.FAILED,
+                retryable = false
+            )
+        }
+
+        var lastResult = failure(action.name(), "Action সম্পন্ন করা যায়নি।", retryable = true)
+        repeat(maxRetries.coerceAtLeast(0) + 1) {
+            if (lastResult.success) return@withContext lastResult
+            lastResult = executeOnce(action)
+            if (!lastResult.success && lastResult.retryable) delay(120L)
+        }
+        lastResult
+    }
+
+    suspend fun waitForElement(target: String, timeoutMs: Long = 5_000L): ActionResult =
+        withContext(Dispatchers.Main) {
+            if (!JarvisAccessibilityService.isEnabled()) {
+                return@withContext failure("wait_for_element", "Accessibility permission enabled নয়।", false)
+            }
+            val deadline = System.currentTimeMillis() + timeoutMs.coerceIn(250L, 10_000L)
+            while (System.currentTimeMillis() < deadline) {
+                val uiSnapshot = JarvisAccessibilityService.getUiSnapshot()
+                val found = uiSnapshot?.nodes?.any { element ->
+                    element.text?.contains(target, ignoreCase = true) == true ||
+                        element.contentDescription?.contains(target, ignoreCase = true) == true
+                } == true
+                if (found) return@withContext verified("wait_for_element", "$target screen-এ পাওয়া গেছে।")
+                delay(120L)
+            }
+            failure("wait_for_element", "$target নির্দিষ্ট সময়ের মধ্যে পাওয়া যায়নি।", true)
+        }
+
+    private fun transition(
+        next: PhoneTaskState,
+        onStateChanged: (PhoneTaskState) -> Unit
+    ) {
+        currentState = next
+        onStateChanged(next)
+    }
+
+    private suspend fun executeOnce(action: PhoneAction): ActionResult {
+        return when (action) {
+            is PhoneAction.ClickText -> {
+                val before = fingerprint()
+                val executed = JarvisAccessibilityService.clickText(action.text) ||
+                    JarvisAccessibilityService.clickDescription(action.text)
+                    verifyChanged(action.name(), action.text, executed, before)
+            }
+            is PhoneAction.ClickDescription -> {
+                val before = fingerprint()
+                val executed = JarvisAccessibilityService.clickDescription(action.description)
+                    verifyChanged(action.name(), action.description, executed, before)
+            }
+            is PhoneAction.Tap -> {
+                val before = fingerprint()
+                val executed = JarvisAccessibilityService.tap(action.x, action.y)
+                    verifyChanged(action.name(), "coordinate tap", executed, before)
+            }
+            is PhoneAction.LongPress -> {
+                val before = fingerprint()
+                val executed = JarvisAccessibilityService.longPress(action.x, action.y, action.durationMs)
+                    verifyChanged(action.name(), "long press", executed, before)
+            }
+            is PhoneAction.Swipe -> {
+                val before = fingerprint()
+                val executed = JarvisAccessibilityService.swipe(
+                    action.startX,
+                    action.startY,
+                    action.endX,
+                    action.endY,
+                    action.durationMs
+                )
+                    verifyChanged(action.name(), "swipe", executed, before)
+            }
+            is PhoneAction.Scroll -> {
+                val before = fingerprint()
+                val executed = JarvisAccessibilityService.scroll(action.direction == PhoneAction.Direction.DOWN)
+                if (!executed) failure(action.name(), "Scroll action করা যায়নি।", retryable = true)
+                else verifyFingerprint(action.name(), before, "Scroll সফল হয়েছে।")
+            }
+            is PhoneAction.TypeText -> {
+                val executed = JarvisAccessibilityService.typeText(action.text, action.pressEnter)
+                if (!executed) failure(action.name(), "কোনো focused editable field পাওয়া যায়নি।", retryable = false)
+                else {
+                    delay(120L)
+                    val visible = JarvisAccessibilityService.getUiSnapshot()?.nodes
+                        ?.any { element -> element.text?.contains(action.text) == true } == true
+                    if (visible) verified(action.name(), "Text input সফল হয়েছে।")
+                    else failure(action.name(), "Text input যাচাই করা যায়নি।", retryable = false)
+                }
+            }
+                PhoneAction.Back -> global(action.name(), JarvisAccessibilityService.back())
+                PhoneAction.Home -> global(action.name(), JarvisAccessibilityService.home())
+                PhoneAction.Recents -> global(action.name(), JarvisAccessibilityService.recents())
+                PhoneAction.Notifications -> global(action.name(), JarvisAccessibilityService.notifications())
+                PhoneAction.QuickSettings -> global(action.name(), JarvisAccessibilityService.quickSettings())
+                PhoneAction.PlayMedia -> failure(
+                action.name(),
+                "Media control needs a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.PauseMedia -> failure(
+                action.name(),
+                "Media control needs a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.ToggleMedia -> failure(
+                action.name(),
+                "Media state unknown; re-observe before toggling.",
+                retryable = true
+            )
+            PhoneAction.NextTrack -> failure(
+                action.name(),
+                "Next-track requires a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.PreviousTrack -> failure(
+                action.name(),
+                "Previous-track requires a supported active media session.",
+                retryable = true
+            )
+            PhoneAction.ClearText -> failure(
+                action.name(),
+                "Clear text requires a focused editable field and system support.",
+                retryable = true
+            )
+            PhoneAction.PressEnter -> failure(
+                action.name(),
+                "Press enter requires a supported input target.",
+                retryable = true
+            )
+            is PhoneAction.SetBrightness -> failure(
+                    action.name(),
+                    "Brightness action-এর জন্য system Context executor প্রয়োজন।",
+                    retryable = false
+                )
+            is PhoneAction.Wait -> {
+                delay(action.milliseconds.coerceIn(0L, 5000L))
+                    ActionResult(true, action.name(), "Wait সম্পন্ন হয়েছে।", VerificationStatus.VERIFIED)
+            }
+        }
+    }
+
+    private suspend fun verifyChanged(
+        actionName: String,
+        target: String,
+        executed: Boolean,
+        before: String?
+    ): ActionResult {
+        if (!executed) return failure(actionName, "$target খুঁজে পাওয়া বা action করা যায়নি।", retryable = true)
+        delay(180L)
+        return verifyFingerprint(actionName, before, "$target action সম্পন্ন হয়েছে।")
+    }
+
+    private fun verifyFingerprint(actionName: String, before: String?, successMessage: String): ActionResult {
+        val after = fingerprint()
+        return if (before == null || after == null || before != after) {
+            verified(actionName, successMessage)
+        } else {
+            failure(actionName, "Action হয়েছে, কিন্তু screen পরিবর্তন যাচাই করা যায়নি।", retryable = true)
+        }
+    }
+
+    private fun fingerprint(): String? = JarvisAccessibilityService.getUiSnapshot()?.fingerprint()
+
+    private fun global(actionName: String, executed: Boolean): ActionResult {
+        return if (executed) verified(actionName, "$actionName সফল হয়েছে।")
+        else failure(actionName, "$actionName করা যায়নি।", retryable = true)
+    }
+
+    private fun verified(action: String, message: String) = ActionResult(
+        success = true,
+        action = action,
+        message = message,
+        verification = VerificationStatus.VERIFIED
+    )
+
+    private fun failure(action: String, message: String, retryable: Boolean) = ActionResult(
+        success = false,
+        action = action,
+        message = message,
+        verification = VerificationStatus.FAILED,
+        retryable = retryable
+    )
+
+    private fun PhoneAction.name(): String = when (this) {
+        is PhoneAction.ClickText -> "click_text"
+        is PhoneAction.ClickDescription -> "click_description"
+        is PhoneAction.Tap -> "tap"
+        is PhoneAction.LongPress -> "long_press"
+        is PhoneAction.Swipe -> "swipe"
+        is PhoneAction.Scroll -> "scroll"
+        is PhoneAction.TypeText -> "type_text"
+        PhoneAction.Back -> "back"
+        PhoneAction.Home -> "home"
+        PhoneAction.Recents -> "recents"
+        PhoneAction.Notifications -> "notifications"
+        PhoneAction.QuickSettings -> "quick_settings"
+        PhoneAction.PlayMedia -> "play_media"
+        PhoneAction.PauseMedia -> "pause_media"
+        PhoneAction.ToggleMedia -> "toggle_media"
+        PhoneAction.NextTrack -> "next_track"
+        PhoneAction.PreviousTrack -> "previous_track"
+        PhoneAction.ClearText -> "clear_text"
+        PhoneAction.PressEnter -> "press_enter"
+        is PhoneAction.SetBrightness -> "set_brightness"
+        is PhoneAction.Wait -> "wait"
+    }
+}

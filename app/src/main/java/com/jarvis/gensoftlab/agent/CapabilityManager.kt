@@ -33,7 +33,8 @@ enum class PlatformFeature {
     FILE_ACCESS,
     MEDIA_CONTROL,
     DEVICE_OWNER_FEATURE,
-    UNKNOWN_PLATFORM_FEATURE
+    UNKNOWN_PLATFORM_FEATURE,
+    POST_NOTIFICATIONS
 }
 
 data class CapabilityInfo(

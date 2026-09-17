@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.jarvis.assistant"
+    namespace = "com.jarvis.gensoftlab"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.jarvis.assistant"
+        applicationId = "com.jarvis.gensoftlab"
         minSdk = 26
         targetSdk = 34
         versionCode = 115

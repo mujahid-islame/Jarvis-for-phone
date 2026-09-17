@@ -1,64 +1,67 @@
-# Package Name Change to `com.jarvis.gensoftlab`
+# Implementation Plan: Human-Like Android Control — Phase 1 (Accessibility Control Layer)
 
-This plan outlines the steps required to change the application's package name and application ID from `com.jarvis.assistant` to `com.jarvis.gensoftlab`. This is a critical change as it affects the app's identity on the Play Store and its internal code structure.
+This phase establishes the semantic UI control layer using Android's `AccessibilityService`. We will refactor the existing monolithic accessibility logic into a modular, thread-safe, and verifiable architecture. The goal is to move from "Act Only" to an "Observe → Understand → Act → Verify" loop.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> Changing the `applicationId` will treat the app as a **new application** on Android devices. If you have an existing version installed, it will not be updated; instead, a new app will be installed alongside it. Data stored under the old package name (Preferences, Database) will not be accessible to the new package unless migrated manually.
-
-> [!WARNING]
-> If this app is already published on the Google Play Store, changing the `applicationId` means you cannot update the existing listing. You would have to create a new app listing.
+> - **Architectural Refactoring**: The existing `JarvisAccessibilityService.kt` will be converted into a lifecycle manager, delegating all UI logic to specialized components (`AccessibilityBridge`, `NodeFinder`, `ActionExecutor`, `GestureController`).
+> - **Implicit Verifiability**: Tools will no longer report success upon dispatch. Success is only confirmed after re-observing the UI state (e.g., package changed, text appeared).
+> - **Stale Node Safety**: We will enforce a "Fresh Node Only" policy, prohibiting the caching of `AccessibilityNodeInfo` across tool turns to prevent crashes or incorrect interactions.
 
 ## Proposed Changes
 
-The changes will be applied across the `:app` module.
+### 1. Accessibility Architecture & Data Models
 
----
+#### [NEW] [UiElement.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/accessibility/UiElement.kt) & [UiSnapshot.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/accessibility/UiSnapshot.kt)
+- Create immutable representations of the UI tree.
+- `UiElement`: Maps text, content description, viewId, bounds, and states (clickable, editable, etc.).
+- `UiSnapshot`: Captures the full screen context including package name and window dimensions.
 
-### Build Configuration
+#### [NEW] [AccessibilityBridge.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/accessibility/AccessibilityBridge.kt)
+- Manages a lifecycle-safe reference to the active service.
+- Provides synchronized access to root nodes and window information.
 
-#### [MODIFY] [build.gradle.kts](file:///C:/Users/islam/Desktop/JarvisAssistant/app/build.gradle.kts)
-- Update `namespace` to `com.jarvis.gensoftlab`.
-- Update `applicationId` to `com.jarvis.gensoftlab`.
+#### [NEW] [AccessibilityNodeFinder.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/accessibility/AccessibilityNodeFinder.kt)
+- Implements deterministic search with priority: Exact Text > Content Description > View ID > Contains Text.
+- Handles ambiguity by returning `AMBIGUOUS_TARGET` errors instead of guessing.
 
----
+#### [NEW] [AccessibilityActionExecutor.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/accessibility/AccessibilityActionExecutor.kt)
+- Wraps `AccessibilityNodeInfo.performAction` for `CLICK`, `SET_TEXT`, `SCROLL`, etc.
+- Implements `wait_for_ui_change` logic based on accessibility events.
 
-### Source Code and Directories
+#### [NEW] [GestureController.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/accessibility/GestureController.kt)
+- Manages `dispatchGesture()` for coordinate-based `tap`, `swipe`, `long_press`.
+- Ensures serialization (one gesture at a time) and waits for completion/cancellation callbacks.
 
-#### [MOVE] `app/src/main/java/com/jarvis/assistant` -> `app/src/main/java/com/jarvis/gensoftlab`
-#### [MOVE] `app/src/test/java/com/jarvis/assistant` -> `app/src/test/java/com/jarvis/gensoftlab`
+### 2. Service Implementation & Configuration
 
-#### [MODIFY] All Kotlin/Java files in `src/main/java` and `src/test/java`
-- Update `package` declarations from `com.jarvis.assistant...` to `com.jarvis.gensoftlab...`.
-- Update `import` statements referencing the old package.
-
----
-
-### Resources and Manifest
-
-#### [MODIFY] [AndroidManifest.xml](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/AndroidManifest.xml)
-- Update any hardcoded activity or service references if they use the full package name.
+#### [MODIFY] [JarvisAccessibilityService.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/accessibility/JarvisAccessibilityService.kt)
+- Refactor to register with `AccessibilityBridge` on connect.
+- Filter incoming `AccessibilityEvent` objects to throttle UI-change detection.
 
 #### [MODIFY] [jarvis_accessibility_service.xml](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/res/xml/jarvis_accessibility_service.xml)
-- Update `android:settingsActivity` reference.
+- Declared minimal meaningful events (`typeWindowStateChanged`, `typeWindowContentChanged`, `typeViewClicked`, `typeViewFocused`, `typeViewTextChanged`).
+- Ensure `canRetrieveWindowContent` and `canPerformGestures` are enabled.
 
-#### [MODIFY] Layout XML files
-- Update custom view references or Data Binding/View Binding references if any.
+### 3. Tool Dispatcher & Execution
 
----
-
-### Other Configurations
-
-#### [MODIFY] [proguard-rules.pro](file:///C:/Users/islam/Desktop/JarvisAssistant/app/proguard-rules.pro)
-- Update `-keep` rules for the new package name.
+#### [MODIFY] [ToolDispatcher.kt](file:///C:/Users/islam/Desktop/JarvisAssistant/app/src/main/java/com/jarvis/gensoftlab/tools/ToolDispatcher.kt)
+- Integrate Phase 1 tools:
+    - **Inspection**: `get_current_app`, `get_ui_tree`, `get_screen_state`.
+    - **Interaction**: `tap`, `swipe`, `scroll`, `set_text`, `click_node`.
+    - **Navigation**: `press_back`, `press_home`, `open_recents`.
+- Implement strict argument validation and actionId generation.
 
 ## Verification Plan
 
 ### Automated Tests
-- Run `gradlew clean assembleDebug` to ensure the project builds successfully.
-- Run unit tests: `gradlew test`.
+- Run `gradlew clean assembleDebug`.
+- Validate coordinate boundary checks (0 to screen width/height).
 
-### Manual Verification
-- Deploy the app to a device/emulator and verify it launches.
-- Verify that the Accessibility Service can be enabled (since it uses the package name).
+### Real Device Verification (TECNO BG6)
+- **Service Detection**: Confirm `CapabilityManager` detects Accessibility as `FULL` once enabled.
+- **UI Inspection**: Verify `get_ui_tree` returns accurate data for Android Settings.
+- **Gesture Loop**: Perform `tap` -> `wait_for_ui_change` -> `verify` in the Clock or Calculator app.
+- **Safe Navigation**: Use `press_home` and `open_recents` to verify global actions.
+- **Text Entry**: Verify `set_text` in a harmless search bar and confirm the text appeared.
